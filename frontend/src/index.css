@@ -300,3 +300,73 @@ body {
   line-height: 1.7;
   margin: 0;
 }
+.guide-subtitle {
+  color: #6b7280;
+  font-size: 14px;
+  margin: -16px 0 24px 0;
+}
+
+.tabs {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+
+.tab-btn {
+  background: rgba(255, 255, 255, 0.6);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 30px;
+  padding: 10px 22px;
+  font-size: 14px;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.tab-btn.active {
+  background: #1a56db;
+  color: white;
+  border-color: #1a56db;
+}
+
+.steps-container {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 24px;
+}
+
+.step-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(10px);
+  border-radius: 16px;
+  padding: 18px 22px;
+  box-shadow: 0 6px 16px rgba(0, 0, 100, 0.05);
+}
+
+.step-number {
+  min-width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #1a56db;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.step-card p {
+  margin: 0;
+  color: #374151;
+  font-size: 14px;
+}
