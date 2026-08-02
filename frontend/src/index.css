@@ -445,3 +445,38 @@ body {
   background: #1a56db;
   color: white;
 }
+.complaint-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.complaint-form input,
+.complaint-form textarea {
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 12px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-family: inherit;
+  outline: none;
+  background: rgba(255,255,255,0.6);
+}
+
+.complaint-form input:focus,
+.complaint-form textarea:focus {
+  border-color: #1a56db;
+}
+
+.complaint-form textarea {
+  resize: vertical;
+}
+
+.generate-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: #1a56db;
+  color: white;
+  border: none;
+  border-radius: 12px;
