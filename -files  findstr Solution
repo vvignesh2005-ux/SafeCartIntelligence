@@ -1,0 +1,15 @@
+[33mcommit 9bee430450035bf8bd29480b7d651e3fca152cd5[m[33m ([m[1;36mHEAD[m[33m -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: Vignesh <vvignesh00167@gmail.com>
+Date:   Fri Aug 7 11:24:39 2026 +0530
+
+    Add backend with Express, MongoDB, and problem-solution-feedback API
+
+ backend/.gitignore              |    2 [32m+[m
+ backend/models/Feedback.js      |   20 [32m+[m
+ backend/models/Problem.js       |   18 [32m+[m
+ backend/models/Solution.js      |   32 [32m+[m
+ backend/package-lock.json       | 1443 [32m+++++++++++++++++++++++++++++++++++++++[m
+ backend/package.json            |   22 [32m+[m
+ backend/routes/problemRoutes.js |   85 [32m+++[m
+ backend/server.js               |   23 [32m+[m
+ 8 files changed, 1645 insertions(+)
