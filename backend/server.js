@@ -5,6 +5,7 @@ const cors = require('cors')
 const problemRoutes = require('./routes/problemRoutes')
 const sellerRoutes = require('./routes/sellerRoutes')
 const platformRoutes = require('./routes/platformRoutes')
+const supportRoutes = require('./routes/supportRoutes')
 
 const app = express()
 const PORT = 5000
@@ -23,6 +24,7 @@ app.get('/', (req, res) => {
 app.use('/api/problems', problemRoutes)
 app.use('/api/sellers', sellerRoutes)
 app.use('/api/platforms', platformRoutes)
+app.use('/api/support', supportRoutes)
 
 app.listen(PORT, () => {
   console.log(`Server running on http://localhost:${PORT}`)
