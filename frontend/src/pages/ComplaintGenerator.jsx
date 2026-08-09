@@ -6,12 +6,26 @@ function ComplaintGenerator() {
   const [orderId, setOrderId] = useState('')
   const [issue, setIssue] = useState('')
   const [platform, setPlatform] = useState('')
-  const [generated, setGenerated] = useState(false)
+  const [generatedText, setGeneratedText] = useState('')
+  const [loading, setLoading] = useState(false)
 
-  const handleGenerate = () => {
-    if (orderId && issue && platform) {
-      setGenerated(true)
-    }
+  const handleGenerate = async () => {
+    if (!orderId || !issue || !platform) return
+    setLoading(true)
+
+    const res = await fetch('http://localhost:5000/api/complaints', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ orderId, platform, issue }),
+    })
+    const data = await res.json()
+
+    setGeneratedText(data.complaint.generatedText)
+    setLoading(false)
+  }
+
+  const copyToClipboard = () => {
+    navigator.clipboard.writeText(generatedText)
   }
 
   return (
@@ -40,13 +54,13 @@ function ComplaintGenerator() {
             value={issue}
             onChange={(e) => setIssue(e.target.value)}
           />
-          <button className="generate-btn" onClick={handleGenerate}>
-            <Send size={16} /> Generate Complaint
+          <button className="generate-btn" onClick={handleGenerate} disabled={loading}>
+            <Send size={16} /> {loading ? 'Generating...' : 'Generate Complaint'}
           </button>
         </div>
       </div>
 
-      {generated && (
+      {generatedText && (
         <div className="trust-card">
           <div className="trust-card-header">
             <FileText size={22} />
@@ -54,20 +68,15 @@ function ComplaintGenerator() {
           </div>
 
           <div className="generated-text">
-            <p>To Whom It May Concern,</p>
-            <p>
-              I am writing to formally report an issue regarding my order (Order ID: {orderId}) placed on {platform}.
-              The issue I encountered is as follows: {issue}
-            </p>
-            <p>
-              I request that this matter be reviewed and resolved at the earliest, in accordance with your platform's
-              customer protection policies. I appreciate your prompt attention to this matter.
-            </p>
-            <p>Sincerely,<br />A Concerned Customer</p>
+            {generatedText.split('\n').map((line, i) => (
+              <p key={i}>{line || '\u00A0'}</p>
+            ))}
           </div>
 
           <div className="complaint-actions">
-            <button className="copy-btn"><Copy size={14} /> Copy</button>
+            <button className="copy-btn" onClick={copyToClipboard}>
+              <Copy size={14} /> Copy
+            </button>
             <button className="action-btn"><Download size={14} /> Download PDF</button>
           </div>
         </div>
