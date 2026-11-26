@@ -11,7 +11,21 @@ const complaintRoutes = require('./routes/complaintRoutes')
 const app = express()
 const PORT = process.env.PORT || 5000
 
-app.use(cors())
+const allowedOrigins = [
+  'https://safe-cart-intelligence.vercel.app',
+  'http://localhost:5173'
+]
+
+app.use(cors({
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true)
+    } else {
+      callback(new Error('Not allowed by CORS'))
+    }
+  }
+}))
+
 app.use(express.json())
 
 mongoose.connect(process.env.MONGO_URI)
