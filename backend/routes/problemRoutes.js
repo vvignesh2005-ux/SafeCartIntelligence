@@ -1,3 +1,4 @@
+const { generateSolutionSteps } = require('../ai')
 const express = require('express')
 const router = express.Router()
 const Problem = require('../models/Problem')
@@ -28,8 +29,17 @@ router.post('/', async (req, res) => {
       return res.json({ found: true, solution: matched[0], problemId: newProblem._id })
     }
 
-    // No existing solution found
-    return res.json({ found: false, problemId: newProblem._id })
+   // No existing solution found — generate one with AI
+    const aiSteps = await generateSolutionSteps(problemText, platform, category)
+
+    const newSolution = new Solution({
+      problemId: newProblem._id,
+      steps: aiSteps,
+      source: 'ai',
+    })
+    await newSolution.save()
+
+    return res.json({ found: true, solution: newSolution, problemId: newProblem._id, aiGenerated: true })
 
   } catch (err) {
     res.status(500).json({ error: err.message })

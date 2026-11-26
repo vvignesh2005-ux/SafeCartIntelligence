@@ -32,26 +32,7 @@ function KnowledgeSystem() {
     const data = await res.json()
 
     setProblemId(data.problemId)
-
-    if (data.found) {
-      setSolution(data.solution)
-    } else {
-      // No existing solution — ask "AI" (sample steps for now) and save it
-      const aiSteps = [
-        "Check your order status in My Orders.",
-        "Contact the seller directly through the platform's chat.",
-        "If unresolved in 48 hours, escalate to platform support.",
-        "File a formal complaint if no response after escalation.",
-      ]
-
-      const solutionRes = await fetch('http://localhost:5000/api/problems/solution', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ problemId: data.problemId, steps: aiSteps, source: 'ai' }),
-      })
-      const solutionData = await solutionRes.json()
-      setSolution(solutionData.solution)
-    }
+    setSolution(data.solution)
 
     setLoading(false)
   }
