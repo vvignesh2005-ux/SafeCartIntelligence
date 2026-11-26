@@ -1,88 +1,462 @@
-import { useState } from 'react'
-import { Link } from 'react-router-dom'
-import { FileText, Copy, Download, Send } from 'lucide-react'
+import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
+import {
+  FileWarning,
+  Sparkles,
+  Download,
+  Copy,
+  Check,
+  AlertTriangle,
+  History,
+  FileText,
+  Printer,
+} from 'lucide-react';
+import {
+  API_BASE_URL,
+  getComplaintHistory,
+  saveComplaintHistory,
+} from '../api';
 
-function ComplaintGenerator() {
-  const [orderId, setOrderId] = useState('')
-  const [issue, setIssue] = useState('')
-  const [platform, setPlatform] = useState('')
-  const [generatedText, setGeneratedText] = useState('')
-  const [loading, setLoading] = useState(false)
+export default function ComplaintGenerator() {
+  const [searchParams] = useSearchParams();
 
-  const handleGenerate = async () => {
-    if (!orderId || !issue || !platform) return
-    setLoading(true)
+  const [sellerName, setSellerName] = useState(
+    searchParams.get('seller') || ''
+  );
+  const [platform, setPlatform] = useState(
+    searchParams.get('platform') || ''
+  );
+  const [orderId, setOrderId] = useState('');
+  const [issue, setIssue] = useState('');
+  const [desiredResolution, setDesiredResolution] = useState('Full Refund');
 
-    const res = await fetch('http://localhost:5000/api/complaints', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ orderId, platform, issue }),
-    })
-    const data = await res.json()
+  const [letterText, setLetterText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+  const [history, setHistory] = useState(() => getComplaintHistory());
 
-    setGeneratedText(data.complaint.generatedText)
-    setLoading(false)
+  useEffect(() => {
+    const s = searchParams.get('seller');
+    const p = searchParams.get('platform');
+    if (s) setSellerName(s);
+    if (p) setPlatform(p);
+  }, [searchParams]);
+
+  function fillExample() {
+    setSellerName('ExampleStore');
+    setPlatform('ExampleMarket');
+    setOrderId('ORD-9921');
+    setIssue(
+      'Received a used, non-working charger instead of the sealed original fast charger advertised. Return request has been pending for 8 days without pickup.'
+    );
+    setDesiredResolution('Full Refund');
+    setError('');
   }
 
-  const copyToClipboard = () => {
-    navigator.clipboard.writeText(generatedText)
+  async function handleGenerate(e) {
+    e.preventDefault();
+    if (!issue.trim()) {
+      setError('Please describe what went wrong with your order.');
+      return;
+    }
+
+    setLoading(true);
+    setError('');
+
+    try {
+      const payload = {
+        sellerName: sellerName.trim() || 'Online Seller',
+        platform: platform.trim() || 'Direct Online Store',
+        orderId: orderId.trim() || 'N/A',
+        issue: issue.trim(),
+        desiredResolution,
+      };
+
+      const res = await fetch(`${API_BASE_URL}/api/complaints`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to generate complaint letter.');
+      }
+
+      const generated =
+        data?.complaint?.generatedText ||
+        data?.complaint?.letter ||
+        data?.complaint?.generatedLetter ||
+        data?.generatedText ||
+        data?.letter ||
+        '';
+
+      if (!generated) {
+        throw new Error('AI returned an empty letter. Please try again.');
+      }
+
+      setLetterText(generated);
+
+      const updatedHistory = saveComplaintHistory({
+        id: data?.complaint?._id || Date.now().toString(),
+        sellerName: payload.sellerName,
+        platform: payload.platform,
+        orderId: payload.orderId,
+        createdAt: new Date().toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'short',
+          year: 'numeric',
+        }),
+        letter: generated,
+      });
+      setHistory(updatedHistory);
+    } catch (err) {
+      setError(
+        err.message ||
+          'Could not connect to Gemini AI backend. Check that your server is running on port 5000.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function handleCopyLetter() {
+    if (!letterText) return;
+    navigator.clipboard?.writeText(letterText);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  function handleDownloadPdf() {
+    if (!letterText) return;
+    window.print();
+  }
+
+  function handleDownloadTxt() {
+    if (!letterText) return;
+    const blob = new Blob([letterText], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `SafeCart-Complaint-${orderId || 'Letter'}.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
   }
 
   return (
-    <div className="dashboard">
-      <Link to="/" className="back-link">← Back to Home</Link>
-      <h1 className="dashboard-title">Complaint Generator</h1>
-      <p className="guide-subtitle">Fill in your order details to generate a professional complaint.</p>
+    <div>
+      {/* Page Header */}
+      <section className="page-header no-print">
+        <div className="eyebrow">
+          <FileWarning size={15} />
+          AI Legal & Consumer Notice Drafter
+        </div>
+        <h1 className="page-title">
+          Generate a formal <span className="gradient-text">complaint letter</span>{' '}
+          in seconds
+        </h1>
+        <p className="page-subtitle">
+          Enter your order facts below. Gemini AI drafts a clear, firm
+          consumer notice citing documented dates and refund rules—ready to
+          save as a PDF or send to a Grievance Officer.
+        </p>
 
-      <div className="trust-card">
-        <div className="complaint-form">
-          <input
-            type="text"
-            placeholder="Order ID"
-            value={orderId}
-            onChange={(e) => setOrderId(e.target.value)}
-          />
-          <input
-            type="text"
-            placeholder="Platform (e.g., Amazon, Instagram Seller)"
-            value={platform}
-            onChange={(e) => setPlatform(e.target.value)}
-          />
-          <textarea
-            placeholder="Describe your issue..."
-            rows={4}
-            value={issue}
-            onChange={(e) => setIssue(e.target.value)}
-          />
-          <button className="generate-btn" onClick={handleGenerate} disabled={loading}>
-            <Send size={16} /> {loading ? 'Generating...' : 'Generate Complaint'}
+        <div className="chip-row">
+          <span className="chip-label">Quick start:</span>
+          <button type="button" className="chip" onClick={fillExample}>
+            Fill Example Dispute (ExampleStore / ORD-9921)
           </button>
         </div>
-      </div>
+      </section>
 
-      {generatedText && (
-        <div className="trust-card">
-          <div className="trust-card-header">
-            <FileText size={22} />
-            <h2>Generated Complaint</h2>
-          </div>
-
-          <div className="generated-text">
-            {generatedText.split('\n').map((line, i) => (
-              <p key={i}>{line || '\u00A0'}</p>
-            ))}
-          </div>
-
-          <div className="complaint-actions">
-            <button className="copy-btn" onClick={copyToClipboard}>
-              <Copy size={14} /> Copy
-            </button>
-            <button className="action-btn"><Download size={14} /> Download PDF</button>
-          </div>
+      {error && (
+        <div
+          className="error-banner no-print"
+          role="alert"
+          style={{ marginBottom: '20px' }}
+        >
+          <AlertTriangle size={20} style={{ flexShrink: 0, marginTop: '2px' }} />
+          <div>{error}</div>
         </div>
       )}
-    </div>
-  )
-}
 
-export default ComplaintGenerator
+      {/* Input Form Card */}
+      <section className="card-elevated no-print" style={{ marginBottom: '26px' }}>
+        <form onSubmit={handleGenerate} className="form-grid">
+          <div className="form-group">
+            <label className="form-label" htmlFor="comp-seller">
+              Seller or Brand Name
+            </label>
+            <input
+              id="comp-seller"
+              type="text"
+              className="form-control"
+              value={sellerName}
+              onChange={(e) => setSellerName(e.target.value)}
+              placeholder="e.g., ExampleStore"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="comp-platform">
+              Platform / Website
+            </label>
+            <input
+              id="comp-platform"
+              type="text"
+              className="form-control"
+              value={platform}
+              onChange={(e) => setPlatform(e.target.value)}
+              placeholder="e.g., ExampleMarket, Instagram"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="comp-order-id">
+              Order ID / Transaction UTR
+            </label>
+            <input
+              id="comp-order-id"
+              type="text"
+              className="form-control"
+              value={orderId}
+              onChange={(e) => setOrderId(e.target.value)}
+              placeholder="e.g., ORD-9921"
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label" htmlFor="comp-resolution">
+              Resolution Requested
+            </label>
+            <select
+              id="comp-resolution"
+              className="form-control"
+              value={desiredResolution}
+              onChange={(e) => setDesiredResolution(e.target.value)}
+            >
+              <option value="Full Refund">Full Refund to Original Payment Method</option>
+              <option value="Immediate Replacement">Immediate Replacement with Sealed Item</option>
+              <option value="Return Pickup & Refund">Scheduled Return Pickup & Refund</option>
+              <option value="Grievance Escalation">Formal Grievance Officer Escalation</option>
+            </select>
+          </div>
+
+          <div className="form-group full-width">
+            <label className="form-label" htmlFor="comp-issue">
+              Documented Issue (What happened & when?) *
+            </label>
+            <textarea
+              id="comp-issue"
+              className="form-control"
+              value={issue}
+              onChange={(e) => setIssue(e.target.value)}
+              placeholder="Describe the item ordered, what arrived (or non-delivery), dates, and prior support ticket numbers..."
+              required
+            />
+          </div>
+
+          <div className="form-group full-width">
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={loading}
+            >
+              <Sparkles size={18} />
+              {loading
+                ? 'Gemini AI is drafting your letter...'
+                : 'Generate Formal Complaint Letter'}
+            </button>
+          </div>
+        </form>
+      </section>
+
+      {/* Loading State */}
+      {loading && (
+        <div
+          className="state-card no-print"
+          role="status"
+          aria-live="polite"
+          style={{ marginBottom: '26px' }}
+        >
+          <div className="spinner" />
+          <h3>Drafting your formal consumer notice...</h3>
+          <p>Formatting order facts, escalation timeline, and resolution demand.</p>
+        </div>
+      )}
+
+      {/* Generated Letter Preview + Working PDF Download */}
+      {!loading && letterText && (
+        <section
+          className="card-elevated printable-letter"
+          style={{ marginBottom: '28px' }}
+          aria-label="Generated complaint letter"
+        >
+          <div
+            className="no-print"
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              gap: '12px',
+              paddingBottom: '16px',
+              marginBottom: '18px',
+              borderBottom: '1px solid var(--border)',
+            }}
+          >
+            <div>
+              <span className="badge badge-verified" style={{ marginBottom: '6px' }}>
+                Ready to Send or Save
+              </span>
+              <h2 style={{ fontSize: '1.35rem' }}>
+                Your Formal Complaint Letter
+              </h2>
+            </div>
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+              <button
+                type="button"
+                className="btn btn-outline btn-sm"
+                onClick={handleCopyLetter}
+              >
+                {copied ? (
+                  <>
+                    <Check size={15} color="var(--verify-green)" /> Copied
+                  </>
+                ) : (
+                  <>
+                    <Copy size={15} /> Copy Text
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={handleDownloadTxt}
+              >
+                <Download size={15} /> Download .TXT
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleDownloadPdf}
+              >
+                <Printer size={15} /> Download PDF
+              </button>
+            </div>
+          </div>
+
+          <label
+            htmlFor="editable-letter-box"
+            className="no-print"
+            style={{
+              display: 'block',
+              fontSize: '0.86rem',
+              color: 'var(--ink-muted)',
+              marginBottom: '8px',
+            }}
+          >
+            Tip: You can edit any name, date, or address directly inside the
+            letter below before clicking <strong>Download PDF</strong> (choose
+            "Save as PDF" in the print dialog).
+          </label>
+
+          <textarea
+            id="editable-letter-box"
+            className="form-control no-print"
+            value={letterText}
+            onChange={(e) => setLetterText(e.target.value)}
+            style={{
+              minHeight: '320px',
+              lineHeight: '1.65',
+              fontFamily: 'var(--font-body)',
+              background: 'var(--mist)',
+            }}
+          />
+
+          <div
+            style={{
+              whiteSpace: 'pre-wrap',
+              lineHeight: '1.65',
+              fontSize: '11pt',
+              color: '#000000',
+              marginTop: '12px',
+            }}
+            className="print-only-block"
+          >
+            <style>{`
+              .print-only-block { display: none; }
+              @media print { .print-only-block { display: block !important; } }
+            `}</style>
+            {letterText}
+          </div>
+        </section>
+      )}
+
+      {/* Past Complaint History */}
+      {history.length > 0 && (
+        <section className="card no-print" aria-label="Past complaint letters">
+          <h3
+            style={{
+              fontSize: '1.12rem',
+              marginBottom: '12px',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+            }}
+          >
+            <History size={18} color="var(--indigo)" />
+            Recent Complaint History ({history.length})
+          </h3>
+
+          <div style={{ display: 'grid', gap: '10px' }}>
+            {history.map((item) => (
+              <div
+                key={item.id}
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                  flexWrap: 'wrap',
+                  gap: '10px',
+                  padding: '12px 14px',
+                  borderRadius: '12px',
+                  background: 'var(--mist)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                <div>
+                  <strong style={{ fontSize: '0.96rem' }}>
+                    {item.sellerName}
+                  </strong>{' '}
+                  <span style={{ color: 'var(--ink-muted)', fontSize: '0.88rem' }}>
+                    • {item.platform} • Order {item.orderId} ({item.createdAt})
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  className="btn btn-outline btn-sm"
+                  onClick={() => {
+                    setSellerName(item.sellerName);
+                    setPlatform(item.platform);
+                    setOrderId(item.orderId);
+                    setLetterText(item.letter);
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
+                >
+                  <FileText size={14} /> Open Letter
+                </button>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
