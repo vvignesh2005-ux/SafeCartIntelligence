@@ -3,7 +3,7 @@ const { GoogleGenAI } = require('@google/genai')
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
 
 // Primary model + fast backup model to prevent 503 high-demand failures
-const MODELS = ['gemini-2.5-flash', 'gemini-2.5-flash-lite']
+const MODELS = ['gemini-2.5-flash', 'gemini-3.5-flash-lite']
 
 async function callGeminiWithFallback(prompt) {
   let lastError
