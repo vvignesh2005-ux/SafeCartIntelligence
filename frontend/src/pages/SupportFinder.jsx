@@ -13,7 +13,9 @@ import {
   PlusCircle,
   CheckCircle2,
   ArrowRight,
-  UserCheck,
+  Clock,
+  Sparkles,
+  Star,
 } from 'lucide-react';
 import {
   API_BASE_URL,
@@ -28,6 +30,14 @@ export default function SupportFinder() {
 
   const [query, setQuery] = useState(initialQuery);
   const [contact, setContact] = useState(null);
+  const [aiGenerated, setAiGenerated] = useState(false);
+  const [popularContacts, setPopularContacts] = useState([
+    'Amazon India',
+    'Flipkart',
+    'Meesho',
+    'Myntra',
+    'National Consumer Helpline (NCH)',
+  ]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [notFoundTerm, setNotFoundTerm] = useState('');
@@ -42,9 +52,28 @@ export default function SupportFinder() {
   const [newEmail, setNewEmail] = useState('');
   const [newPhone, setNewPhone] = useState('');
   const [newWebsite, setNewWebsite] = useState('');
-  const [newGrievanceEmail, setNewGrievanceEmail] = useState('');
+  const [newSupportHours, setNewSupportHours] = useState('24/7 via Official App');
   const [submitting, setSubmitting] = useState(false);
   const [submitSuccess, setSubmitSuccess] = useState('');
+
+  // 1-5 Star Support & Service Feedback
+  const [supportStars, setSupportStars] = useState(5);
+  const [serviceStars, setServiceStars] = useState(5);
+  const [supportComment, setSupportComment] = useState('');
+  const [serviceNote, setServiceNote] = useState('');
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [feedbackSuccess, setFeedbackSuccess] = useState('');
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/support`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.contacts?.length) {
+          setPopularContacts(data.contacts.slice(0, 6).map((c) => c.name));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function fetchSupport(rawTerm) {
     const clean = normalizeQuery(rawTerm);
@@ -57,51 +86,36 @@ export default function SupportFinder() {
     setError('');
     setNotFoundTerm('');
     setSubmitSuccess('');
+    setFeedbackSuccess('');
     setSearchParams({ q: clean });
 
     const updated = saveRecentSearch(clean, 'sci_recent_support');
     setRecentSearches(updated);
 
-    const compact = clean.replace(/\s+/g, '');
-    const candidates =
-      compact.toLowerCase() !== clean.toLowerCase()
-        ? [clean, compact]
-        : [clean];
-
     try {
-      let foundRecord = null;
-      for (const candidate of candidates) {
-        const res = await fetch(
-          `${API_BASE_URL}/api/support/${encodeURIComponent(candidate)}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const record = data?.support || data?.contact || data;
-          if (
-            record &&
-            (record.name ||
-              record.storeName ||
-              record.email ||
-              record.phone ||
-              record.supportEmail)
-          ) {
-            foundRecord = record;
-            break;
-          }
-        }
+      const res = await fetch(
+        `${API_BASE_URL}/api/support/${encodeURIComponent(clean)}`
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Could not look up support contact.');
       }
 
-      if (foundRecord) {
-        setContact(foundRecord);
+      const record = data?.support || data?.contact || data;
+      if (record && (record.name || record.email || record.phone)) {
+        setContact(record);
+        setAiGenerated(Boolean(data?.aiGenerated));
       } else {
         setContact(null);
         setNotFoundTerm(clean);
         setNewName(clean);
       }
-    } catch {
+    } catch (err) {
       setContact(null);
       setError(
-        'Could not connect to the backend server. Make sure your server is running on port 5000.'
+        err.message ||
+          'Could not connect to the backend server. Make sure your server is running.'
       );
     } finally {
       setLoading(false);
@@ -140,14 +154,11 @@ export default function SupportFinder() {
     try {
       const payload = {
         name: cleanName,
-        storeName: cleanName,
         email: newEmail.trim(),
-        supportEmail: newEmail.trim(),
-        phone: newPhone.trim(),
-        supportPhone: newPhone.trim(),
+        phone: newPhone.trim() || 'Use official in-app Help Center callback',
         website: newWebsite.trim(),
-        portalUrl: newWebsite.trim(),
-        grievanceEmail: newGrievanceEmail.trim(),
+        supportHours: newSupportHours.trim() || '24/7 Official Portal',
+        liveChatAvailable: true,
         verified: true,
       };
 
@@ -173,18 +184,56 @@ export default function SupportFinder() {
     }
   }
 
+  async function handleFeedbackSubmit(e) {
+    e.preventDefault();
+    if (!contact?._id) return;
+
+    setSubmittingFeedback(true);
+    setError('');
+    setFeedbackSuccess('');
+
+    try {
+      const res = await fetch(
+        `${API_BASE_URL}/api/support/${contact._id}/feedback`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            supportRating: supportStars,
+            serviceRating: serviceStars,
+            comment: supportComment,
+            serviceFeedback: serviceNote,
+          }),
+        }
+      );
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || 'Failed to save feedback.');
+      }
+
+      setSupportComment('');
+      setServiceNote('');
+      setFeedbackSuccess(
+        `Thank you! Your ${supportStars}/5 support rating and ${serviceStars}/5 Safe Cart service feedback are saved to MongoDB.`
+      );
+    } catch (err) {
+      setError(err.message || 'Could not save feedback.');
+    } finally {
+      setSubmittingFeedback(false);
+    }
+  }
+
   const displayName =
     contact?.name || contact?.storeName || contact?.platform || '';
   const displayEmail =
     contact?.email || contact?.supportEmail || 'Not listed yet';
   const displayPhone =
-    contact?.phone || contact?.supportPhone || 'In-app / Email support only';
+    contact?.phone || contact?.supportPhone || 'Use official in-app Help Center callback';
   const displayWebsite =
     contact?.website || contact?.portalUrl || contact?.url || '';
-  const displayGrievance =
-    contact?.grievanceEmail ||
-    contact?.grievanceOfficer ||
-    'Use official support email & request Grievance Escalation';
+  const displayHours =
+    contact?.supportHours || '24/7 via official app & help portal';
 
   return (
     <div>
@@ -201,7 +250,7 @@ export default function SupportFinder() {
         <p className="page-subtitle">
           Scammers buy fake helpline numbers on search engines. Look up
           verified support emails, grievance contacts, and official help portals
-          here.
+          powered by MongoDB and Gemini AI.
         </p>
 
         {/* Search Bar */}
@@ -220,7 +269,7 @@ export default function SupportFinder() {
                   className="search-input"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Enter store or platform name (e.g., ExampleStore)..."
+                  placeholder="Enter brand or platform name (e.g., Amazon India, Flipkart, Swiggy, Boat)..."
                   aria-label="Store or platform name"
                 />
               </div>
@@ -235,40 +284,37 @@ export default function SupportFinder() {
           </div>
 
           <div className="chip-row">
-            <span className="chip-label">Try:</span>
-            <button
-              type="button"
-              className="chip"
-              onClick={() => {
-                setQuery('ExampleStore');
-                fetchSupport('ExampleStore');
-              }}
-            >
-              ExampleStore
-            </button>
-            <button
-              type="button"
-              className="chip"
-              onClick={() => {
-                setQuery('Example Store');
-                fetchSupport('Example Store');
-              }}
-            >
-              Example Store (spaced)
-            </button>
-            {recentSearches.map((term) => (
+            <span className="chip-label">Verified Channels:</span>
+            {popularContacts.map((name) => (
               <button
-                key={term}
+                key={name}
                 type="button"
                 className="chip"
                 onClick={() => {
-                  setQuery(term);
-                  fetchSupport(term);
+                  setQuery(name);
+                  fetchSupport(name);
                 }}
               >
-                Recent: {term}
+                <ShieldCheck size={13} /> {name}
               </button>
             ))}
+
+            {recentSearches
+              .filter((t) => !popularContacts.includes(t))
+              .slice(0, 3)
+              .map((term) => (
+                <button
+                  key={term}
+                  type="button"
+                  className="chip"
+                  onClick={() => {
+                    setQuery(term);
+                    fetchSupport(term);
+                  }}
+                >
+                  Recent: {term}
+                </button>
+              ))}
           </div>
         </form>
       </section>
@@ -314,12 +360,11 @@ export default function SupportFinder() {
             style={{ marginBottom: '12px' }}
           />
           <h2 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>
-            Search a brand or store for verified contact channels
+            Pick a verified brand above or search any company
           </h2>
           <p style={{ maxWidth: '54ch', margin: '0 auto 18px' }}>
-            Click <strong>ExampleStore</strong> above to inspect verified
-            contact records, or add a verified support channel from an
-            official invoice.
+            Safe Cart checks MongoDB first and uses Gemini AI to retrieve
+            anti-scam official channels and store them for future users.
           </p>
           <button
             type="button"
@@ -368,133 +413,291 @@ export default function SupportFinder() {
 
       {/* Verified Contact Result Card */}
       {!loading && contact && (
-        <section className="card-elevated" style={{ marginBottom: '24px' }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              flexWrap: 'wrap',
-              gap: '16px',
-              paddingBottom: '18px',
-              borderBottom: '1px solid var(--border)',
-            }}
-          >
-            <div>
-              <span className="badge badge-verified" style={{ marginBottom: '8px' }}>
-                <ShieldCheck size={14} /> Documented Official Contact
-              </span>
-              <h2 style={{ fontSize: '1.65rem' }}>{displayName}</h2>
-            </div>
-
-            <Link
-              to={`/complaint?seller=${encodeURIComponent(displayName)}`}
-              className="btn btn-primary btn-sm"
+        <>
+          <section className="card-elevated" style={{ marginBottom: '24px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                flexWrap: 'wrap',
+                gap: '16px',
+                paddingBottom: '18px',
+                borderBottom: '1px solid var(--border)',
+              }}
             >
-              Draft Complaint to This Store <ArrowRight size={15} />
-            </Link>
-          </div>
-
-          <div className="metrics-grid" style={{ marginTop: '20px' }}>
-            {/* Official Email */}
-            <div className="metric-box">
-              <div
-                className="metric-label"
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <Mail size={15} color="var(--indigo)" /> Official Support Email
-              </div>
-              <div
-                className="metric-value"
-                style={{ fontSize: '1.05rem', wordBreak: 'break-all' }}
-              >
-                {displayEmail}
-              </div>
-              {displayEmail !== 'Not listed yet' && (
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  style={{ marginTop: '10px' }}
-                  onClick={() => handleCopy(displayEmail, 'email')}
-                >
-                  {copiedField === 'email' ? (
-                    <>
-                      <Check size={14} color="var(--verify-green)" /> Copied
-                    </>
+              <div>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '8px' }}>
+                  {aiGenerated ? (
+                    <span className="badge badge-info">
+                      <Sparkles size={14} /> AI Verified Channel (Saved to DB)
+                    </span>
                   ) : (
-                    <>
-                      <Copy size={14} /> Copy Email
-                    </>
+                    <span className="badge badge-verified">
+                      <ShieldCheck size={14} /> Verified Official Contact
+                    </span>
                   )}
-                </button>
-              )}
+                </div>
+                <h2 style={{ fontSize: '1.65rem' }}>{displayName}</h2>
+              </div>
+
+              <Link
+                to={`/complaint?platform=${encodeURIComponent(displayName)}`}
+                className="btn btn-primary btn-sm"
+              >
+                Draft Complaint to This Brand <ArrowRight size={15} />
+              </Link>
             </div>
 
-            {/* Official Phone */}
-            <div className="metric-box">
-              <div
-                className="metric-label"
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <PhoneCall size={15} color="var(--indigo)" /> Verified Helpline
-              </div>
-              <div className="metric-value" style={{ fontSize: '1.05rem' }}>
-                {displayPhone}
-              </div>
-              {displayPhone !== 'In-app / Email support only' && (
-                <button
-                  type="button"
-                  className="btn btn-outline btn-sm"
-                  style={{ marginTop: '10px' }}
-                  onClick={() => handleCopy(displayPhone, 'phone')}
+            <div className="metrics-grid" style={{ marginTop: '20px' }}>
+              {/* Official Email */}
+              <div className="metric-box">
+                <div
+                  className="metric-label"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
                 >
-                  {copiedField === 'phone' ? (
-                    <>
-                      <Check size={14} color="var(--verify-green)" /> Copied
-                    </>
-                  ) : (
-                    <>
-                      <Copy size={14} /> Copy Number
-                    </>
-                  )}
+                  <Mail size={15} color="var(--indigo)" /> Official Support / Grievance Email
+                </div>
+                <div
+                  className="metric-value"
+                  style={{ fontSize: '1.05rem', wordBreak: 'break-all' }}
+                >
+                  {displayEmail}
+                </div>
+                {displayEmail !== 'Not listed yet' && (
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    style={{ marginTop: '10px' }}
+                    onClick={() => handleCopy(displayEmail, 'email')}
+                  >
+                    {copiedField === 'email' ? (
+                      <>
+                        <Check size={14} color="var(--verify-green)" /> Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={14} /> Copy Email
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* Official Phone */}
+              <div className="metric-box">
+                <div
+                  className="metric-label"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <PhoneCall size={15} color="var(--indigo)" /> Verified Helpline
+                </div>
+                <div className="metric-value" style={{ fontSize: '1.05rem' }}>
+                  {displayPhone}
+                </div>
+                {displayPhone !== 'Use official in-app Help Center callback' && (
+                  <button
+                    type="button"
+                    className="btn btn-outline btn-sm"
+                    style={{ marginTop: '10px' }}
+                    onClick={() => handleCopy(displayPhone, 'phone')}
+                  >
+                    {copiedField === 'phone' ? (
+                      <>
+                        <Check size={14} color="var(--verify-green)" /> Copied
+                      </>
+                    ) : (
+                      <>
+                        <Copy size={14} /> Copy Number
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
+
+              {/* Support Hours */}
+              <div className="metric-box">
+                <div
+                  className="metric-label"
+                  style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                >
+                  <Clock size={15} color="var(--indigo)" /> Support Hours & Availability
+                </div>
+                <div
+                  className="metric-value"
+                  style={{ fontSize: '1.02rem', wordBreak: 'break-word' }}
+                >
+                  {displayHours}
+                </div>
+              </div>
+            </div>
+
+            {displayWebsite && (
+              <div style={{ marginTop: '16px' }}>
+                <a
+                  href={
+                    /^https?:\/\//i.test(displayWebsite)
+                      ? displayWebsite
+                      : `https://${displayWebsite}`
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-secondary btn-sm"
+                >
+                  <Globe size={15} /> Open Official Support Portal
+                </a>
+              </div>
+            )}
+          </section>
+
+          {/* Interactive 5-Star Support & Safe Cart Service Feedback Card */}
+          <section
+            className="card-elevated"
+            style={{ marginBottom: '24px' }}
+            aria-label="Rate support contact and Safe Cart service"
+          >
+            <h2 style={{ fontSize: '1.3rem', marginBottom: '6px' }}>
+              Was This Contact Helpful? Rate Support & Safe Cart Service
+            </h2>
+            <p
+              style={{
+                color: 'var(--ink-soft)',
+                fontSize: '0.94rem',
+                marginBottom: '16px',
+              }}
+            >
+              Confirm if {displayName}'s contact worked and rate Safe Cart's
+              directory service out of 5 stars.
+            </p>
+
+            {feedbackSuccess && (
+              <div
+                className="badge-verified"
+                role="status"
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <CheckCircle2 size={18} />
+                <span>{feedbackSuccess}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleFeedbackSubmit} className="form-grid">
+              <div className="form-group">
+                <label className="form-label">
+                  Rate {displayName}'s Support Response (1 to 5 Stars)
+                </label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setSupportStars(num)}
+                      className="btn btn-outline btn-sm"
+                      style={{
+                        borderColor:
+                          supportStars >= num ? '#F59E0B' : 'var(--border)',
+                        background:
+                          supportStars >= num
+                            ? 'rgba(245, 158, 11, 0.12)'
+                            : 'transparent',
+                        color:
+                          supportStars >= num ? '#B45309' : 'var(--ink-soft)',
+                      }}
+                    >
+                      <Star
+                        size={16}
+                        fill={supportStars >= num ? '#F59E0B' : 'none'}
+                        color={supportStars >= num ? '#F59E0B' : 'currentColor'}
+                      />
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">
+                  How was Safe Cart's service? (1 to 5 Stars)
+                </label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setServiceStars(num)}
+                      className="btn btn-outline btn-sm"
+                      style={{
+                        borderColor:
+                          serviceStars >= num ? 'var(--indigo)' : 'var(--border)',
+                        background:
+                          serviceStars >= num
+                            ? 'rgba(45, 63, 224, 0.1)'
+                            : 'transparent',
+                        color:
+                          serviceStars >= num ? 'var(--indigo)' : 'var(--ink-soft)',
+                      }}
+                    >
+                      <Star
+                        size={16}
+                        fill={serviceStars >= num ? 'var(--indigo)' : 'none'}
+                        color={
+                          serviceStars >= num ? 'var(--indigo)' : 'currentColor'
+                        }
+                      />
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="support-contact-note">
+                  Contact Verification Note (Optional)
+                </label>
+                <textarea
+                  id="support-contact-note"
+                  className="form-control"
+                  value={supportComment}
+                  onChange={(e) => setSupportComment(e.target.value)}
+                  placeholder="e.g., Grievance officer replied within 24 hours..."
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label" htmlFor="support-service-note">
+                  How is Safe Cart's service? (Optional feedback)
+                </label>
+                <textarea
+                  id="support-service-note"
+                  className="form-control"
+                  value={serviceNote}
+                  onChange={(e) => setServiceNote(e.target.value)}
+                  placeholder="e.g., Saved me from calling a fake helpline ad..."
+                />
+              </div>
+
+              <div className="form-group full-width">
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={submittingFeedback}
+                >
+                  <CheckCircle2 size={17} />
+                  {submittingFeedback
+                    ? 'Saving Feedback...'
+                    : 'Submit Support Rating & Service Feedback'}
                 </button>
-              )}
-            </div>
-
-            {/* Grievance Officer */}
-            <div className="metric-box">
-              <div
-                className="metric-label"
-                style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
-              >
-                <UserCheck size={15} color="var(--indigo)" /> Grievance Escalation
               </div>
-              <div
-                className="metric-value"
-                style={{ fontSize: '1.02rem', wordBreak: 'break-word' }}
-              >
-                {displayGrievance}
-              </div>
-            </div>
-          </div>
-
-          {displayWebsite && (
-            <div style={{ marginTop: '16px' }}>
-              <a
-                href={
-                  /^https?:\/\//i.test(displayWebsite)
-                    ? displayWebsite
-                    : `https://${displayWebsite}`
-                }
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn btn-secondary btn-sm"
-              >
-                <Globe size={15} /> Open Official Support Portal
-              </a>
-            </div>
-          )}
-        </section>
+            </form>
+          </section>
+        </>
       )}
 
       {/* National Escalation Safety Card (Always Visible for Seniors & Shoppers) */}
@@ -572,7 +775,7 @@ export default function SupportFinder() {
 
             <div className="form-group">
               <label className="form-label" htmlFor="sup-email-input">
-                Official Support Email
+                Official Support / Grievance Email
               </label>
               <input
                 id="sup-email-input"
@@ -599,16 +802,16 @@ export default function SupportFinder() {
             </div>
 
             <div className="form-group">
-              <label className="form-label" htmlFor="sup-grievance-input">
-                Grievance Officer Email
+              <label className="form-label" htmlFor="sup-hours-input">
+                Support Hours
               </label>
               <input
-                id="sup-grievance-input"
-                type="email"
+                id="sup-hours-input"
+                type="text"
                 className="form-control"
-                value={newGrievanceEmail}
-                onChange={(e) => setNewGrievanceEmail(e.target.value)}
-                placeholder="grievance@examplestore.com"
+                value={newSupportHours}
+                onChange={(e) => setNewSupportHours(e.target.value)}
+                placeholder="e.g., 24/7 In-App Help"
               />
             </div>
 
