@@ -27,6 +27,7 @@ import {
 export default function LandingPage() {
   const navigate = useNavigate();
   const fileInputRef = useRef(null);
+  const recognitionRef = useRef(null);
 
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
@@ -36,27 +37,36 @@ export default function LandingPage() {
     getRecentSearches()
   );
 
-  function extractTargetName(rawInput) {
-    const trimmed = normalizeQuery(rawInput);
-    if (!trimmed) return '';
-    try {
-      const withProtocol = /^https?:\/\//i.test(trimmed)
-        ? trimmed
-        : trimmed.includes('.') && !trimmed.includes(' ')
-        ? `https://${trimmed}`
-        : null;
-      if (withProtocol) {
-        const url = new URL(withProtocol);
-        const host = url.hostname.replace(/^www\./i, '');
-        const parts = host.split('.');
-        return parts[0] || host;
-      }
-    } catch {
-      // Not a URL; keep cleaned text
-    }
-    return trimmed;
-  }
+ function extractTargetName(rawInput) {
+  const trimmed = normalizeQuery(rawInput).replace(/^[\[\(\{\<"']+|[\]\)\}\>"']+$/g, '').trim();
+  if (!trimmed) return '';
+  try {
+    const withProtocol = /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : trimmed.includes('.') && !trimmed.includes(' ')
+      ? `https://${trimmed}`
+      : null;
+    if (withProtocol) {
+      const url = new URL(withProtocol);
+      const host = url.hostname.replace(/^www\./i, '').toLowerCase();
+      const pathSegments = url.pathname
+        .split('/')
+        .map((s) => s.trim())
+        .filter(Boolean);
 
+      const socialHosts = ['instagram.com', 'facebook.com', 'x.com', 'twitter.com', 'youtube.com'];
+      if (socialHosts.includes(host) && pathSegments.length > 0) {
+        return pathSegments[0].replace(/^@/, '');
+      }
+
+      const parts = host.split('.');
+      return parts[0] || host;
+    }
+  } catch {
+    // Not a URL; keep cleaned text
+  }
+  return trimmed.replace(/^@/, '');
+}
   async function handleSmartSearch(rawTerm) {
     const target = extractTargetName(rawTerm ?? query);
     if (!target) {
@@ -82,7 +92,7 @@ export default function LandingPage() {
         );
         if (sellerRes.ok) {
           const data = await sellerRes.json();
-          if (data && (data.name || data.seller)) {
+          if (data && (data.found || data.name || data.seller)) {
             navigate(`/seller?q=${encodeURIComponent(name)}`);
             return;
           }
@@ -95,16 +105,16 @@ export default function LandingPage() {
         );
         if (platRes.ok) {
           const data = await platRes.json();
-          if (data && (data.name || data.platform)) {
+          if (data && (data.found || data.name || data.platform)) {
             navigate(`/platform?q=${encodeURIComponent(name)}`);
             return;
           }
         }
       }
 
-      navigate(`/seller?q=${encodeURIComponent(target)}`);
+      navigate(`/platform?q=${encodeURIComponent(target)}`);
     } catch {
-      navigate(`/seller?q=${encodeURIComponent(target)}`);
+      navigate(`/platform?q=${encodeURIComponent(target)}`);
     } finally {
       setSearching(false);
     }
@@ -129,14 +139,21 @@ export default function LandingPage() {
       }
       const extracted = extractTargetName(clipText);
       setQuery(extracted);
-      setHelperNotice(`Extracted "${extracted}" from clipboard link. Checking evidence...`);
+      setHelperNotice(`Extracted "${extracted}" from link. Checking evidence...`);
       handleSmartSearch(extracted);
     } catch {
-      setHelperNotice('Allow clipboard permission or press Ctrl+V inside the search bar.');
+      setHelperNotice('Allow clipboard permission in browser bar or press Ctrl+V inside the box.');
     }
   }
 
   function handleVoiceSearch() {
+    if (listening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setListening(false);
+      setHelperNotice('Voice search stopped.');
+      return;
+    }
+
     setHelperNotice('');
     const SpeechRecognition =
       window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -147,6 +164,7 @@ export default function LandingPage() {
     }
 
     const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
     recognition.lang = 'en-IN';
     recognition.interimResults = false;
     recognition.maxAlternatives = 1;
@@ -163,9 +181,13 @@ export default function LandingPage() {
       handleSmartSearch(spoken);
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
       setListening(false);
-      setHelperNotice('Could not hear clearly. Try speaking closer to the mic or type the name.');
+      if (event.error === 'not-allowed') {
+        setHelperNotice('Microphone permission blocked. Allow mic access in your browser address bar.');
+      } else {
+        setHelperNotice('Could not hear clearly. Speak closer to the mic or type the name.');
+      }
     };
 
     recognition.onend = () => {
@@ -178,20 +200,20 @@ export default function LandingPage() {
   function handleScreenshotChange(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+
     const baseName = file.name
       .replace(/\.[^/.]+$/, '')
       .replace(/[_-]+/g, ' ')
-      .replace(/screenshot|img|whatsapp|instagram|photo|\d+/gi, '')
+      .replace(/screenshot|screen|shot|img|whatsapp|instagram|photo|image|\d+/gi, '')
       .trim();
 
     if (baseName.length >= 3) {
       setQuery(baseName);
-      setHelperNotice(
-        `Screenshot "${file.name}" attached. Checking "${baseName}" — or open Complaint AI to draft a refund letter.`
-      );
+      setHelperNotice(`Screenshot "${file.name}" scanned -> checking "${baseName}"...`);
+      handleSmartSearch(baseName);
     } else {
       setHelperNotice(
-        `Screenshot "${file.name}" ready. Type the seller's handle above to check their record, or open Complaint AI.`
+        `Screenshot "${file.name}" attached. Type the store name above to check its record, or draft a letter in Complaint AI.`
       );
     }
     e.target.value = '';
@@ -233,7 +255,7 @@ export default function LandingPage() {
                   className="search-input"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Search seller, Instagram handle, or marketplace (e.g., ExampleStore)..."
+                  placeholder="Search seller, Instagram handle, or marketplace (e.g., Amazon, ExampleStore)..."
                   aria-label="Seller or platform name"
                 />
               </div>
@@ -259,7 +281,7 @@ export default function LandingPage() {
                     size={15}
                     color={listening ? '#DC2626' : 'currentColor'}
                   />
-                  <span>{listening ? 'Listening...' : 'Voice'}</span>
+                  <span>{listening ? 'Stop Mic' : 'Voice'}</span>
                 </button>
 
                 <button
@@ -312,16 +334,16 @@ export default function LandingPage() {
             <button
               type="button"
               className="chip"
-              onClick={() => handleSmartSearch('ExampleStore')}
+              onClick={() => handleSmartSearch('Amazon')}
             >
-              <Store size={14} /> ExampleStore
+              <Globe size={14} /> Amazon
             </button>
             <button
               type="button"
               className="chip"
-              onClick={() => handleSmartSearch('ExampleMarket')}
+              onClick={() => handleSmartSearch('ExampleStore')}
             >
-              <Globe size={14} /> ExampleMarket
+              <Store size={14} /> ExampleStore
             </button>
 
             {recentSearches.map((item) => (
@@ -579,7 +601,7 @@ export default function LandingPage() {
               timelines across marketplaces and social commerce apps.
             </p>
           </div>
-          <Link to="/platform?q=ExampleMarket" className="btn btn-secondary">
+          <Link to="/platform?q=Amazon" className="btn btn-secondary">
             Compare Platforms <ArrowRight size={16} />
           </Link>
         </article>
