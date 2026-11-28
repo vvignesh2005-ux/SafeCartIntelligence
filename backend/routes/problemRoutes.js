@@ -112,8 +112,16 @@ router.post('/feedback', async (req, res) => {
   try {
     const { solutionId, result, whichStepWorked } = req.body
 
-    const newFeedback = new Feedback({ solutionId, result, whichStepWorked })
-    await newFeedback.save()
+const parsedStep =
+  typeof whichStepWorked === 'number'
+    ? whichStepWorked
+    : Number(String(whichStepWorked || '').replace(/\D/g, '')) || null
+
+const newFeedback = new Feedback({
+  solutionId,
+  result,
+  whichStepWorked: parsedStep
+})
 
     const updateField =
       result === 'solved' ? 'solvedCount' :
