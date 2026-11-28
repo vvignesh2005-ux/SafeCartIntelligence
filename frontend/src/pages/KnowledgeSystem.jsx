@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import {
   Sparkles,
   CheckCircle2,
@@ -8,67 +9,47 @@ import {
   ThumbsUp,
   Layers,
   RefreshCw,
+  Star,
+  ArrowRight,
 } from 'lucide-react';
 import { API_BASE_URL } from '../api';
 
 const CATEGORIES = [
-  'Refund Delay',
+  'Refund Delayed',
   'Fake or Counterfeit Product',
   'Non-Delivery / Fake Tracking',
   'Return Rejected Unfairly',
-  'Wrong Item Received',
+  'Wrong or Damaged Item',
+  'Order Not Delivered',
   'Seller Blocked / Unresponsive',
 ];
 
-function buildTailoredSteps(category, platformName) {
-  const store = platformName || 'the platform';
-
-  const library = {
-    'Refund Delay': [
-      `Screenshot your order ID, payment UTR/transaction receipt, and ${store} return/cancellation approval confirmation.`,
-      `Send a written follow-up to ${store} official support quoting your order ID and requesting a clear 48-hour refund credit SLA.`,
-      `If the refund remains pending past the promised timeline, escalate to ${store}'s Grievance Officer with your support ticket number.`,
-      `Raise a payment dispute/chargeback with your bank (within 45 calendar days for UPI/cards) or file a complaint at consumerhelpline.gov.in (1915).`,
-    ],
-    'Fake or Counterfeit Product': [
-      `Record a clear video and photos showing the counterfeit packaging, missing brand holograms/serial numbers, and invoice.`,
-      `Report the item as "Counterfeit / Not Authentic" inside ${store} within the return window and attach your unboxing evidence.`,
-      `Demand a full refund without restocking fees in writing; cite brand verification failure under E-Commerce Consumer Protection rules.`,
-      `If ${store} refuses or closes the ticket, file a formal grievance on consumerhelpline.gov.in (1915) and request a card/UPI chargeback.`,
-    ],
-    'Non-Delivery / Fake Tracking': [
-      `Download the courier tracking log and screenshot any "delivered" status that lacks your signature or valid OTP confirmation.`,
-      `Notify ${store} immediately in writing that the parcel was never physically handed over and request proof of delivery (POD).`,
-      `Escalate to ${store}'s Grievance Officer if the courier fails to produce signed POD within 48 hours.`,
-      `Initiate a non-receipt dispute with your bank/UPI provider using the 12-digit UTR number and log a complaint on 1915.`,
-    ],
-    'Return Rejected Unfairly': [
-      `Gather your uncut unboxing video showing all 6 sides of the sealed parcel, shipping label, and original brand tags intact.`,
-      `Re-open the support ticket on ${store} and attach links/screenshots proving the defect or mismatch existed upon opening.`,
-      `Escalate to the Grievance Officer quoting the 48-hour acknowledgement rule if automated support rejects the return again.`,
-      `Use Safe Cart's Complaint AI to send a formal consumer notice before filing on consumerhelpline.gov.in (1915).`,
-    ],
-    'Wrong Item Received': [
-      `Photograph the wrong item next to the outer shipping label (AWB) and invoice showing what you actually ordered.`,
-      `Submit a "Wrong Item Delivered" return claim inside ${store} before the return window closes.`,
-      `Ensure the pickup executive verifies the item condition and gives you a digital/SMS pickup receipt.`,
-      `If refund is delayed after pickup, escalate to ${store} Grievance Support or file a bank chargeback with your pickup proof.`,
-    ],
-    'Seller Blocked / Unresponsive': [
-      `Export and screenshot the full chat history, seller profile handle, payment receipt (UTR), and promised delivery dates.`,
-      `Check Safe Cart's Verified Support Finder for an official brand email or grievance contact outside social chat.`,
-      `Contact your remitting bank immediately (within 45 days for UPI) to raise an unresolved merchant dispute using your UTR.`,
-      `Register a formal consumer complaint at consumerhelpline.gov.in or call 1915 with the seller's bank/UPI details.`,
-    ],
-  };
-
-  return library[category] || library['Refund Delay'];
-}
+const FALLBACK_COMMON_CASES = [
+  {
+    platform: 'Amazon India',
+    category: 'Refund Delayed',
+    problemText:
+      'Return pickup completed 5 days ago, but refund is still not credited to bank account.',
+  },
+  {
+    platform: 'Flipkart',
+    category: 'Wrong or Damaged Item',
+    problemText:
+      'Received a different or damaged product and return request was rejected.',
+  },
+  {
+    platform: 'Instagram Store',
+    category: 'Order Not Delivered',
+    problemText:
+      'Paid via UPI to an Instagram seller who stopped replying and shared no tracking ID.',
+  },
+];
 
 export default function KnowledgeSystem() {
-  const [category, setCategory] = useState('Refund Delay');
-  const [platform, setPlatform] = useState('ExampleMarket');
+  const [category, setCategory] = useState('Refund Delayed');
+  const [platform, setPlatform] = useState('Amazon India');
   const [problemText, setProblemText] = useState('');
+  const [commonCases, setCommonCases] = useState(FALLBACK_COMMON_CASES);
 
   const [loading, setLoading] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -77,31 +58,39 @@ export default function KnowledgeSystem() {
   const [solution, setSolution] = useState(null);
   const [sourceType, setSourceType] = useState(''); // 'verified' | 'ai'
 
-  // Feedback Loop State
+  // Feedback + 1-5 Star Service Rating State
   const [outcome, setOutcome] = useState('solved'); // 'solved' | 'partial' | 'failed'
   const [whichStepWorked, setWhichStepWorked] = useState('Step 1');
+  const [serviceStars, setServiceStars] = useState(5);
+  const [serviceNote, setServiceNote] = useState('');
   const [submittingFeedback, setSubmittingFeedback] = useState(false);
   const [feedbackSaved, setFeedbackSaved] = useState(false);
 
-  function fillExampleProblem() {
-    setCategory('Refund Delay');
-    setPlatform('ExampleMarket');
-    setProblemText(
-      'Refund was approved 12 days ago after return pickup, but the amount has still not credited to my bank account.'
-    );
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/problems/common`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.problems?.length) {
+          setCommonCases(data.problems.slice(0, 5));
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  function applyCommonCase(item) {
+    setCategory(item.category || 'Refund Delayed');
+    setPlatform(item.platform || 'Amazon India');
+    setProblemText(item.problemText || '');
     setError('');
   }
 
   function normalizeSteps(solObj) {
-    if (!solObj) return [];
-    if (Array.isArray(solObj.steps) && solObj.steps.length > 0) {
-      return solObj.steps.map((s) =>
-        typeof s === 'string'
-          ? s
-          : s.instruction || s.description || s.text || s.title || JSON.stringify(s)
-      );
-    }
-    return buildTailoredSteps(category, platform);
+    if (!solObj || !Array.isArray(solObj.steps)) return [];
+    return solObj.steps.map((s) =>
+      typeof s === 'string'
+        ? s
+        : s.instruction || s.description || s.text || s.title || JSON.stringify(s)
+    );
   }
 
   async function handleFindOrGenerateSolution(e) {
@@ -115,12 +104,11 @@ export default function KnowledgeSystem() {
     setError('');
     setSolution(null);
     setFeedbackSaved(false);
-    setStatusMessage('Searching crowd-verified solutions in MongoDB...');
+    setStatusMessage('Searching crowd-verified playbooks & Gemini AI...');
 
     const cleanPlatform = platform.trim() || 'Online Store';
 
     try {
-      // 1. Check MongoDB for highest-performing solution matching category + platform
       const probRes = await fetch(`${API_BASE_URL}/api/problems`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -133,56 +121,25 @@ export default function KnowledgeSystem() {
 
       const probData = await probRes.json();
       if (!probRes.ok) {
-        throw new Error(probData.error || 'Failed to submit problem.');
+        throw new Error(probData.error || 'Failed to find or generate solution.');
       }
 
-      const activeProblemId = probData.problemId || '';
-
-      // Reuse existing solution ONLY if it actually has non-empty steps
-      if (
-        probData.found &&
-        probData.solution &&
-        Array.isArray(probData.solution.steps) &&
-        probData.solution.steps.length > 0
-      ) {
+      if (probData.solution) {
         setSolution(probData.solution);
-        setSourceType('verified');
+        const isAi =
+          Boolean(probData.aiGenerated) || probData.solution.source === 'ai';
+        setSourceType(isAi ? 'ai' : 'verified');
         setWhichStepWorked('Step 1');
         setStatusMessage('');
         return;
       }
 
-      // 2. Otherwise build 4 tailored steps and persist them via POST /api/problems/solution
-      setStatusMessage(
-        'Building a tailored 4-step recovery playbook and saving to knowledge loop...'
-      );
-
-      const tailoredSteps = buildTailoredSteps(category, cleanPlatform);
-
-      const solRes = await fetch(`${API_BASE_URL}/api/problems/solution`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          problemId: activeProblemId,
-          steps: tailoredSteps,
-          source: 'ai',
-        }),
-      });
-
-      const solData = await solRes.json();
-      if (!solRes.ok) {
-        throw new Error(solData.error || 'Failed to save solution.');
-      }
-
-      setSolution(solData.solution);
-      setSourceType('ai');
-      setWhichStepWorked('Step 1');
-      setStatusMessage('');
+      throw new Error('No solution returned from backend.');
     } catch (err) {
       setStatusMessage('');
       setError(
         err.message ||
-          'Could not connect to the backend server. Check that your server is running on port 5000.'
+          'Could not connect to the backend server. Check that your server is running.'
       );
     } finally {
       setLoading(false);
@@ -204,6 +161,8 @@ export default function KnowledgeSystem() {
           solutionId: solution._id,
           result: outcome,
           whichStepWorked: outcome === 'failed' ? 'None' : whichStepWorked,
+          serviceRating: serviceStars,
+          serviceFeedback: serviceNote,
         }),
       });
 
@@ -215,6 +174,7 @@ export default function KnowledgeSystem() {
       if (data.solution) {
         setSolution(data.solution);
       }
+      setServiceNote('');
       setFeedbackSaved(true);
     } catch (err) {
       setError(err.message || 'Could not save feedback.');
@@ -241,16 +201,23 @@ export default function KnowledgeSystem() {
           that improve after every case
         </h1>
         <p className="page-subtitle">
-          Safe Cart checks if past shoppers already solved your exact platform
-          issue. If not, it creates a 4-step recovery plan—and your outcome
-          vote ranks the best solution #1 for future buyers.
+          Safe Cart checks MongoDB to see if past shoppers already solved your
+          platform dispute. For new cases, Gemini AI drafts a 4-step recovery
+          playbook and saves it—and your outcome vote ranks the best solution #1.
         </p>
 
         <div className="chip-row">
-          <span className="chip-label">Try example case:</span>
-          <button type="button" className="chip" onClick={fillExampleProblem}>
-            Refund Delay on ExampleMarket
-          </button>
+          <span className="chip-label">Common Disputes:</span>
+          {commonCases.map((item, idx) => (
+            <button
+              key={item._id || idx}
+              type="button"
+              className="chip"
+              onClick={() => applyCommonCase(item)}
+            >
+              {item.platform} • {item.category}
+            </button>
+          ))}
         </div>
       </section>
 
@@ -292,7 +259,7 @@ export default function KnowledgeSystem() {
               className="form-control"
               value={platform}
               onChange={(e) => setPlatform(e.target.value)}
-              placeholder="e.g., ExampleMarket, Instagram Seller"
+              placeholder="e.g., Amazon India, Flipkart, Instagram Seller"
               required
             />
           </div>
@@ -320,7 +287,7 @@ export default function KnowledgeSystem() {
               <RefreshCw size={17} />
               {loading
                 ? 'Finding Best Solution...'
-                : 'Find Proven Solution or Generate Recovery Steps'}
+                : 'Find Proven Solution or Generate AI Steps'}
             </button>
           </div>
         </form>
@@ -365,11 +332,11 @@ export default function KnowledgeSystem() {
               >
                 {sourceType === 'verified' ? (
                   <span className="badge badge-verified">
-                    <CheckCircle2 size={14} /> Matched Top Crowd-Verified Solution
+                    <CheckCircle2 size={14} /> Matched Top Crowd-Verified Playbook
                   </span>
                 ) : (
                   <span className="badge badge-info">
-                    <Sparkles size={14} /> New Recovery Playbook Saved
+                    <Sparkles size={14} /> Gemini AI Playbook (Saved to DB)
                   </span>
                 )}
                 <span className="badge badge-info">{category}</span>
@@ -380,7 +347,7 @@ export default function KnowledgeSystem() {
             </div>
 
             {/* Live Evidence Counters */}
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }}>
               <span className="badge badge-verified">
                 Solved: {solvedCount}
               </span>
@@ -396,6 +363,14 @@ export default function KnowledgeSystem() {
               >
                 Unresolved: {failedCount}
               </span>
+              <Link
+                to={`/complaint?platform=${encodeURIComponent(
+                  platform
+                )}&issue=${encodeURIComponent(problemText)}`}
+                className="btn btn-outline btn-sm"
+              >
+                Draft Formal Notice <ArrowRight size={14} />
+              </Link>
             </div>
           </div>
 
@@ -438,7 +413,7 @@ export default function KnowledgeSystem() {
             ))}
           </div>
 
-          {/* Self-Improving Feedback Loop Form */}
+          {/* Self-Improving Feedback + 5-Star Service Rating Loop */}
           <div
             style={{
               marginTop: '26px',
@@ -458,7 +433,7 @@ export default function KnowledgeSystem() {
               }}
             >
               <Layers size={19} color="var(--indigo)" />
-              Close the Loop: Did these steps work for you?
+              Close the Loop: Did these steps work & how was Safe Cart's service?
             </h3>
             <p
               style={{
@@ -467,8 +442,8 @@ export default function KnowledgeSystem() {
                 marginBottom: '16px',
               }}
             >
-              Your outcome updates our live ranking counters in MongoDB so the
-              next shopper sees the most effective solution first.
+              Your outcome and star rating update our live rankings in MongoDB
+              so the next shopper sees the most effective solution first.
             </p>
 
             {feedbackSaved ? (
@@ -485,8 +460,8 @@ export default function KnowledgeSystem() {
               >
                 <CheckCircle2 size={18} />
                 <span>
-                  Thank you! Outcome recorded and solution rankings updated in
-                  MongoDB.
+                  Thank you! Your outcome and {serviceStars}/5 service rating
+                  are saved to MongoDB.
                 </span>
               </div>
             ) : (
@@ -496,7 +471,7 @@ export default function KnowledgeSystem() {
                     display: 'flex',
                     gap: '10px',
                     flexWrap: 'wrap',
-                    marginBottom: '14px',
+                    marginBottom: '16px',
                   }}
                 >
                   <button
@@ -536,28 +511,76 @@ export default function KnowledgeSystem() {
                   </button>
                 </div>
 
-                {outcome !== 'failed' && (
-                  <div
-                    className="form-group"
-                    style={{ maxWidth: '340px', marginBottom: '14px' }}
-                  >
-                    <label className="form-label" htmlFor="worked-step-select">
-                      Which step made the difference?
+                <div className="form-grid" style={{ marginBottom: '14px' }}>
+                  {outcome !== 'failed' && (
+                    <div className="form-group">
+                      <label className="form-label" htmlFor="worked-step-select">
+                        Which step made the difference?
+                      </label>
+                      <select
+                        id="worked-step-select"
+                        className="form-control"
+                        value={whichStepWorked}
+                        onChange={(e) => setWhichStepWorked(e.target.value)}
+                      >
+                        {stepsList.map((_, i) => (
+                          <option key={i} value={`Step ${i + 1}`}>
+                            Step {i + 1}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  <div className="form-group">
+                    <label className="form-label">
+                      Rate Safe Cart's Recovery Service (1 to 5 Stars)
                     </label>
-                    <select
-                      id="worked-step-select"
-                      className="form-control"
-                      value={whichStepWorked}
-                      onChange={(e) => setWhichStepWorked(e.target.value)}
-                    >
-                      {stepsList.map((_, i) => (
-                        <option key={i} value={`Step ${i + 1}`}>
-                          Step {i + 1}
-                        </option>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                      {[1, 2, 3, 4, 5].map((num) => (
+                        <button
+                          key={num}
+                          type="button"
+                          onClick={() => setServiceStars(num)}
+                          className="btn btn-outline btn-sm"
+                          style={{
+                            borderColor:
+                              serviceStars >= num ? 'var(--indigo)' : 'var(--border)',
+                            background:
+                              serviceStars >= num
+                                ? 'rgba(45, 63, 224, 0.1)'
+                                : 'transparent',
+                            color:
+                              serviceStars >= num ? 'var(--indigo)' : 'var(--ink-soft)',
+                          }}
+                        >
+                          <Star
+                            size={16}
+                            fill={serviceStars >= num ? 'var(--indigo)' : 'none'}
+                            color={
+                              serviceStars >= num ? 'var(--indigo)' : 'currentColor'
+                            }
+                          />
+                          {num}
+                        </button>
                       ))}
-                    </select>
+                    </div>
                   </div>
-                )}
+
+                  <div className="form-group full-width">
+                    <label className="form-label" htmlFor="knowledge-service-note">
+                      How was Safe Cart's service? (Optional feedback)
+                    </label>
+                    <input
+                      id="knowledge-service-note"
+                      type="text"
+                      className="form-control"
+                      value={serviceNote}
+                      onChange={(e) => setServiceNote(e.target.value)}
+                      placeholder="e.g., Step 3 helped me get my refund within 48 hours..."
+                    />
+                  </div>
+                </div>
 
                 <button
                   type="submit"
@@ -566,8 +589,8 @@ export default function KnowledgeSystem() {
                 >
                   <ThumbsUp size={16} />
                   {submittingFeedback
-                    ? 'Updating Counters...'
-                    : 'Submit Outcome & Update Rankings'}
+                    ? 'Updating Rankings...'
+                    : 'Submit Outcome & Rating'}
                 </button>
               </form>
             )}

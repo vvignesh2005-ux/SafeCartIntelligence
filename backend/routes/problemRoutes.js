@@ -6,9 +6,89 @@ const Problem = require('../models/Problem')
 const Solution = require('../models/Solution')
 const Feedback = require('../models/Feedback')
 
+const COMMON_PROBLEMS = [
+  {
+    platform: 'Amazon India',
+    category: 'Refund Delayed',
+    problemText: 'Return pickup completed 5 days ago, but refund is still not credited to bank account.',
+    steps: [
+      'Open Your Orders in the Amazon app and capture a screenshot showing Return Picked Up status.',
+      'Request a callback in Amazon Help Center and ask for the Refund Reference Number (RRN / ARN).',
+      'Email cs-reply@amazon.in with your Order ID and RRN demanding credit within 48 hours.',
+      'Submit the RRN to your bank or file a grievance on National Consumer Helpline (1915).',
+    ],
+    solvedCount: 18,
+  },
+  {
+    platform: 'Flipkart',
+    category: 'Wrong or Damaged Item',
+    problemText: 'Received a different or damaged product and return request was rejected.',
+    steps: [
+      'Gather your unboxing video, outer shipping label photo, and IMEI/serial number images.',
+      'Reopen the return ticket in Flipkart Help Center under Escalate to Senior Executive.',
+      'Email grievance.officer@flipkart.com citing Indian E-Commerce Rules with your Ticket ID.',
+      'If unresolved after 7 days, file a chargeback dispute with your UPI/card bank using the proof.',
+    ],
+    solvedCount: 14,
+  },
+  {
+    platform: 'Instagram Store',
+    category: 'Order Not Delivered',
+    problemText: 'Paid via UPI to an Instagram seller who stopped replying and shared no tracking ID.',
+    steps: [
+      'Save screenshots of the Instagram profile URL, chat agreement, and UPI transaction UTR.',
+      'Report the merchant UPI ID in your UPI app (GPay/PhonePe/Paytm) under Fraud / Non-Delivery.',
+      'File an online complaint at cybercrime.gov.in (1930) and consumerhelpline.gov.in (1915).',
+      'Submit the complaint acknowledgement PDF to your bank branch to freeze or reverse the transfer.',
+    ],
+    solvedCount: 22,
+  },
+]
+
+function escapeRegex(str) {
+  return String(str || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+async function ensureSeededProblems() {
+  for (const item of COMMON_PROBLEMS) {
+    const existing = await Problem.findOne({
+      platform: new RegExp(`^${escapeRegex(item.platform)}$`, 'i'),
+      category: new RegExp(`^${escapeRegex(item.category)}$`, 'i'),
+    })
+    if (!existing) {
+      const createdProblem = await Problem.create({
+        problemText: item.problemText,
+        platform: item.platform,
+        category: item.category,
+        reportCount: item.solvedCount,
+      })
+      await Solution.create({
+        problemId: createdProblem._id,
+        steps: item.steps,
+        source: 'user-verified',
+        solvedCount: item.solvedCount,
+        partialCount: 1,
+        failedCount: 0,
+      })
+    }
+  }
+}
+
+// GET /api/problems/common - list pre-seeded & top community problems for quick chips
+router.get('/common', async (req, res) => {
+  try {
+    await ensureSeededProblems()
+    const problems = await Problem.find().sort({ reportCount: -1, updatedAt: -1 }).limit(8)
+    res.json({ problems })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
 // POST /api/problems - merge common issues, rank #1 user-verified solution, or generate new AI playbook
 router.post('/', async (req, res) => {
   try {
+    await ensureSeededProblems()
     const { problemText, platform, category } = req.body
 
     if (!problemText || !platform || !category) {
@@ -20,14 +100,13 @@ router.post('/', async (req, res) => {
 
     // 1. Check if a common problem already exists for this platform + category
     const matchingProblems = await Problem.find({
-      platform: new RegExp(`^${cleanPlatform}$`, 'i'),
-      category: new RegExp(`^${cleanCategory}$`, 'i'),
+      platform: new RegExp(`^${escapeRegex(cleanPlatform)}$`, 'i'),
+      category: new RegExp(`^${escapeRegex(cleanCategory)}$`, 'i'),
     })
 
     let activeProblem
 
     if (matchingProblems.length > 0) {
-      // Reuse the canonical common problem so individual reports consolidate into one
       activeProblem = matchingProblems[0]
       await Problem.findByIdAndUpdate(activeProblem._id, {
         $inc: { reportCount: 1 },
@@ -38,7 +117,6 @@ router.post('/', async (req, res) => {
       const matchedSolutions = await Solution.find({ problemId: { $in: problemIds } })
 
       if (matchedSolutions.length > 0) {
-        // Rank #1 by net user verification score (solved - failed), then highest solvedCount
         matchedSolutions.sort((a, b) => {
           const scoreA = (a.solvedCount || 0) - (a.failedCount || 0)
           const scoreB = (b.solvedCount || 0) - (b.failedCount || 0)
@@ -55,7 +133,6 @@ router.post('/', async (req, res) => {
         })
       }
     } else {
-      // Create a new canonical problem record
       activeProblem = new Problem({
         problemText: problemText.trim(),
         platform: cleanPlatform,
@@ -111,7 +188,7 @@ router.post('/solution', async (req, res) => {
 // POST /api/problems/feedback - record user verification & boost top-performing solution
 router.post('/feedback', async (req, res) => {
   try {
-    const { solutionId, result, whichStepWorked } = req.body
+    const { solutionId, result, whichStepWorked, serviceRating, serviceFeedback } = req.body
 
     const parsedStep =
       typeof whichStepWorked === 'number'
@@ -122,6 +199,8 @@ router.post('/feedback', async (req, res) => {
       solutionId,
       result,
       whichStepWorked: parsedStep,
+      serviceRating: Number(serviceRating) || 5,
+      serviceFeedback: (serviceFeedback || '').trim(),
     })
     await newFeedback.save()
 
