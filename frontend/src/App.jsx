@@ -7,6 +7,7 @@ import ReturnGuide from './pages/ReturnGuide';
 import SupportFinder from './pages/SupportFinder';
 import ComplaintGenerator from './pages/ComplaintGenerator';
 import KnowledgeSystem from './pages/KnowledgeSystem';
+import FeeScanner from './pages/FeeScanner';
 
 export default function App() {
   return (
@@ -19,6 +20,7 @@ export default function App() {
           <Route path="/platform" element={<PlatformAnalysis />} />
           <Route path="/returns" element={<ReturnGuide />} />
           <Route path="/support" element={<SupportFinder />} />
+          <Route path="/scanner" element={<FeeScanner />} />
           <Route path="/complaint" element={<ComplaintGenerator />} />
           <Route path="/knowledge" element={<KnowledgeSystem />} />
           <Route path="*" element={<Navigate to="/" replace />} />

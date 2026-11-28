@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { to: '/platform', label: 'Platforms' },
   { to: '/returns', label: 'Return Guide' },
   { to: '/support', label: 'Support Finder' },
+  { to: '/scanner', label: 'Fee Scanner' },
   { to: '/complaint', label: 'Complaint AI' },
   { to: '/knowledge', label: 'Solution Loop' },
 ];

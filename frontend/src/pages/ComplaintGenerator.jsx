@@ -10,12 +10,32 @@ import {
   History,
   FileText,
   Printer,
+  Mail,
+  Clock,
 } from 'lucide-react';
 import {
   API_BASE_URL,
   getComplaintHistory,
   saveComplaintHistory,
 } from '../api';
+
+function getStatutoryDeadlines() {
+  const now = new Date();
+  const ackDate = new Date(now.getTime() + 48 * 60 * 60 * 1000);
+  const officerDate = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const nchDate = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+  const fmt = (d) =>
+    d.toLocaleDateString('en-IN', {
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+    });
+  return {
+    ack: fmt(ackDate),
+    officer: fmt(officerDate),
+    nch: fmt(nchDate),
+  };
+}
 
 export default function ComplaintGenerator() {
   const [searchParams] = useSearchParams();
@@ -35,6 +55,8 @@ export default function ComplaintGenerator() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState(() => getComplaintHistory());
+
+  const deadlines = getStatutoryDeadlines();
 
   useEffect(() => {
     const s = searchParams.get('seller');
@@ -144,6 +166,15 @@ export default function ComplaintGenerator() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+  }
+
+  function handleLaunchEmail() {
+    if (!letterText) return;
+    const subject = encodeURIComponent(
+      `Formal Consumer Grievance: Order ${orderId || 'Dispute'} — ${sellerName || platform || 'Online Order'}`
+    );
+    const body = encodeURIComponent(letterText);
+    window.location.href = `mailto:?subject=${subject}&body=${body}`;
   }
 
   return (
@@ -288,7 +319,7 @@ export default function ComplaintGenerator() {
         </div>
       )}
 
-      {/* Generated Letter Preview + Working PDF Download */}
+      {/* Generated Letter Preview + Statutory Escalation Timeline */}
       {!loading && letterText && (
         <section
           className="card-elevated printable-letter"
@@ -336,6 +367,14 @@ export default function ComplaintGenerator() {
 
               <button
                 type="button"
+                className="btn btn-outline btn-sm"
+                onClick={handleLaunchEmail}
+              >
+                <Mail size={15} /> Open in Email
+              </button>
+
+              <button
+                type="button"
                 className="btn btn-secondary btn-sm"
                 onClick={handleDownloadTxt}
               >
@@ -349,6 +388,49 @@ export default function ComplaintGenerator() {
               >
                 <Printer size={15} /> Download PDF
               </button>
+            </div>
+          </div>
+
+          {/* Statutory SLA Escalation Timeline */}
+          <div
+            className="no-print"
+            style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '10px',
+              padding: '14px',
+              marginBottom: '16px',
+              borderRadius: '12px',
+              background: 'var(--mist)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div>
+              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--indigo)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <Clock size={13} /> STEP 1 • 48-HOUR SLA
+              </div>
+              <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>By {deadlines.ack}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                Mandatory platform ticket acknowledgment deadline
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--indigo)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <Clock size={13} /> STEP 2 • 7-DAY ESCALATION
+              </div>
+              <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>By {deadlines.officer}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                Escalate to Grievance Officer if refund/pickup stalls
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: '0.78rem', fontWeight: 700, color: 'var(--indigo)', display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <Clock size={13} /> STEP 3 • 30-DAY STATUTORY LIMIT
+              </div>
+              <div style={{ fontSize: '0.9rem', fontWeight: 600 }}>By {deadlines.nch}</div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--ink-muted)' }}>
+                File on National Consumer Helpline (1915) / e-Jagriti
+              </div>
             </div>
           </div>
 
@@ -436,7 +518,7 @@ export default function ComplaintGenerator() {
                     {item.sellerName}
                   </strong>{' '}
                   <span style={{ color: 'var(--ink-muted)', fontSize: '0.88rem' }}>
-                    • {item.platform} • Order {item.orderId} ({item.createdAt})
+                    - {item.platform} • Order {item.orderId} ({item.createdAt})
                   </span>
                 </div>
                 <button

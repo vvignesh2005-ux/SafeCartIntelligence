@@ -1,4 +1,5 @@
 const { generateSolutionSteps } = require('../ai')
+const { GoogleGenAI } = require('@google/genai')
 const express = require('express')
 const router = express.Router()
 const Problem = require('../models/Problem')
@@ -112,16 +113,17 @@ router.post('/feedback', async (req, res) => {
   try {
     const { solutionId, result, whichStepWorked } = req.body
 
-const parsedStep =
-  typeof whichStepWorked === 'number'
-    ? whichStepWorked
-    : Number(String(whichStepWorked || '').replace(/\D/g, '')) || null
+    const parsedStep =
+      typeof whichStepWorked === 'number'
+        ? whichStepWorked
+        : Number(String(whichStepWorked || '').replace(/\D/g, '')) || null
 
-const newFeedback = new Feedback({
-  solutionId,
-  result,
-  whichStepWorked: parsedStep
-})
+    const newFeedback = new Feedback({
+      solutionId,
+      result,
+      whichStepWorked: parsedStep,
+    })
+    await newFeedback.save()
 
     const updateField =
       result === 'solved' ? 'solvedCount' :
@@ -136,6 +138,61 @@ const newFeedback = new Feedback({
     res.json({ success: true, solution: updatedSolution })
   } catch (err) {
     res.status(500).json({ error: err.message })
+  }
+})
+
+// POST /api/problems/analyze-checkout - Pre-purchase dark pattern & hidden fee detector
+router.post('/analyze-checkout', async (req, res) => {
+  try {
+    const { platform = 'Unknown Platform', checkoutText } = req.body
+    if (!checkoutText || !checkoutText.trim()) {
+      return res.status(400).json({ error: 'Checkout summary or pricing text is required.' })
+    }
+
+    const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
+
+    const prompt = `Analyze this e-commerce checkout breakdown or product offer from "${platform}" for Indian consumer dark patterns (drip pricing, hidden platform/handling fees, pre-ticked add-ons, false urgency, or non-returnable traps).
+Return ONLY valid JSON with this exact shape:
+{
+  "riskLevel": "Low" | "Moderate" | "High",
+  "flags": [
+    { "type": "Short Flag Name", "detail": "One-sentence factual explanation", "ruleReference": "Consumer Protection (E-Commerce) Rules / Dark Patterns Guidelines" }
+  ],
+  "safestPaymentTip": "One actionable payment/evidence tip before paying"
+}
+Text to inspect:
+"""${checkoutText.trim()}"""`
+
+    let responseText = ''
+    try {
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash',
+        contents: prompt,
+      })
+      responseText = response.text
+    } catch (primaryErr) {
+      const fallback = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-lite',
+        contents: prompt,
+      })
+      responseText = fallback.text
+    }
+
+    const cleaned = responseText.replace(/```json|```/gi, '').trim()
+    const parsed = JSON.parse(cleaned)
+    res.json(parsed)
+  } catch (err) {
+    res.json({
+      riskLevel: 'Moderate',
+      flags: [
+        {
+          type: 'Manual Fee Verification Advised',
+          detail: 'Compare item base price against final payable total for unannounced handling, packaging, or convenience fees.',
+          ruleReference: 'Central Consumer Protection Authority (CCPA) Dark Patterns Guidelines',
+        },
+      ],
+      safestPaymentTip: 'Use a credit card or UPI with screenshot proof of the final checkout breakdown before paying.',
+    })
   }
 })
 
