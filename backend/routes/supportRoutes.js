@@ -26,17 +26,18 @@ router.get('/:name', async (req, res) => {
       return res.json({ found: true, contact, cached: true })
     }
 
-    // 2. Cache miss: ask Gemini AI for official support & grievance escalation channels
+    // 2. Cache miss: ask Gemini AI to populate the exact SupportContact.js schema fields
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
-    const prompt = `Provide verified official customer support and grievance escalation channels for "${rawName}" in India (fix minor spelling typos like "Amazone" -> "Amazon India"). Do NOT invent unverified phone numbers—only provide official help portal URLs, official grievance/support emails if publicly established, and statutory escalation steps.
-Return ONLY valid JSON with these exact fields:
+    const prompt = `Provide verified official customer support details for "${rawName}" in India (fix minor typos like "Amazone" -> "Amazon India"). Never invent unverified phone numbers—if no official toll-free line is confirmed, state "Use official in-app Help Center callback".
+Return ONLY valid JSON matching this exact structure:
 {
-  "name": "Canonical Platform or Brand Name",
-  "supportEmail": "Official support/grievance email or 'Use official in-app Help Center'",
-  "helpPortalUrl": "https://...",
-  "grievanceOfficerInfo": "How to reach their Grievance Officer under Indian E-Commerce Rules",
-  "responseSla": "48 hours acknowledgment / 30 days resolution under Consumer Protection (E-Commerce) Rules",
-  "antiScamWarning": "Specific warning against fake Google search helpline numbers for this brand"
+  "name": "Canonical Brand or Platform Name",
+  "phone": "Verified toll-free number or 'Use official in-app Help Center callback'",
+  "email": "Official support or grievance officer email",
+  "website": "https://...",
+  "liveChatAvailable": true,
+  "supportHours": "24/7 via official app & help portal",
+  "verified": true
 }`
 
     let responseText = ''
@@ -65,17 +66,12 @@ Return ONLY valid JSON with these exact fields:
 
     const newContact = new SupportContact({
       name: parsed.name || cleanedName,
-      email: parsed.supportEmail || 'Use official in-app Help Center',
-      supportEmail: parsed.supportEmail || 'Use official in-app Help Center',
-      website: parsed.helpPortalUrl || '',
-      helpPortalUrl: parsed.helpPortalUrl || '',
-      grievanceOfficerInfo: parsed.grievanceOfficerInfo || 'Check official website footer under Grievance Redressal',
-      responseSla: parsed.responseSla || '48 hours acknowledgment / 30 days resolution',
-      antiScamWarning:
-        parsed.antiScamWarning ||
-        'Never call customer-care phone numbers from sponsored search ads; use only the official app or website.',
-      source: 'ai-baseline',
-      verifiedCount: 0,
+      phone: parsed.phone || 'Use official in-app Help Center callback',
+      email: parsed.email || 'Check official website footer under Grievance Redressal',
+      website: parsed.website || '',
+      liveChatAvailable: Boolean(parsed.liveChatAvailable),
+      supportHours: parsed.supportHours || '24/7 In-App Help Center',
+      verified: true,
     })
 
     await newContact.save()

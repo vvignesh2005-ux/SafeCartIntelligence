@@ -17,7 +17,7 @@ router.get('/:name', async (req, res) => {
 
     const cleanedName = normalizeQuery(rawName)
 
-    // 1. Check MongoDB first (exact or partial case-insensitive match)
+    // 1. Check MongoDB first
     let platform = await Platform.findOne({
       name: { $regex: cleanedName, $options: 'i' },
     })
@@ -26,21 +26,27 @@ router.get('/:name', async (req, res) => {
       return res.json({ found: true, platform, cached: true })
     }
 
-    // 2. Cache miss: ask Gemini AI to identify official platform details & save to MongoDB
+    // 2. Cache miss: ask Gemini AI to populate the exact Platform.js schema fields
     const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY })
-    const prompt = `Identify the e-commerce or social shopping platform "${rawName}" (fix minor spelling typos like "Amazone" -> "Amazon India").
-Return ONLY valid JSON with these exact fields:
+    const prompt = `Analyze the e-commerce or social shopping platform "${rawName}" in India (fix minor typos like "Amazone" -> "Amazon India").
+Return ONLY valid JSON matching this exact structure (numbers from 1.0 to 5.0 based on documented consumer dispute patterns):
 {
   "name": "Canonical Platform Name",
-  "type": "Marketplace" | "Social Commerce" | "Quick Commerce" | "Direct Store",
-  "returnWindow": "Typical return/refund policy summary (e.g., 7-10 days replacement/refund on eligible items)",
-  "refundSpeed": "Typical refund timeline (e.g., 3-5 business days to original payment source)",
-  "grievanceProcess": "How to escalate unresolved issues (in-app help -> Grievance Officer -> NCH 1915)",
-  "buyerProtectionTips": [
-    "Actionable safety tip 1 before paying",
-    "Actionable safety tip 2 for proof/unboxing"
+  "ratings": {
+    "publicReputation": 4.2,
+    "customerSatisfaction": 4.0,
+    "deliveryPerformance": 4.3,
+    "supportQuality": 3.8,
+    "returnExperience": 4.1,
+    "refundSpeed": 4.0
+  },
+  "averageRefundTime": "3-5 business days to original payment method",
+  "commonComplaints": [
+    "Documented dispute pattern 1",
+    "Documented dispute pattern 2",
+    "Documented dispute pattern 3"
   ],
-  "officialWebsite": "https://..."
+  "aiSummary": "2-sentence factual overview of return windows, payment protection, and grievance escalation rules under Indian E-Commerce Rules."
 }`
 
     let responseText = ''
@@ -60,7 +66,6 @@ Return ONLY valid JSON with these exact fields:
 
     const parsed = JSON.parse(responseText.replace(/```json|```/gi, '').trim())
 
-    // Check again by canonical name to avoid duplicate records
     const existingCanonical = await Platform.findOne({
       name: new RegExp(`^${parsed.name}$`, 'i'),
     })
@@ -70,17 +75,21 @@ Return ONLY valid JSON with these exact fields:
 
     const newPlatform = new Platform({
       name: parsed.name || cleanedName,
-      type: parsed.type || 'Online Platform',
-      returnWindow: parsed.returnWindow || 'Verify seller return policy before checkout',
-      refundSpeed: parsed.refundSpeed || '3–7 business days via original payment mode',
-      grievanceProcess: parsed.grievanceProcess || 'Escalate via official Grievance Officer email or NCH 1915',
-      buyerProtectionTips: parsed.buyerProtectionTips || [
-        'Pay via traceable UPI or Credit Card instead of direct personal bank transfers.',
-        'Record an uncut unboxing video for high-value deliveries.',
-      ],
-      officialWebsite: parsed.officialWebsite || '',
-      source: 'ai-baseline',
-      verifiedCount: 0,
+      ratings: {
+        publicReputation: Number(parsed.ratings?.publicReputation) || 3.5,
+        customerSatisfaction: Number(parsed.ratings?.customerSatisfaction) || 3.5,
+        deliveryPerformance: Number(parsed.ratings?.deliveryPerformance) || 3.5,
+        supportQuality: Number(parsed.ratings?.supportQuality) || 3.5,
+        returnExperience: Number(parsed.ratings?.returnExperience) || 3.5,
+        refundSpeed: Number(parsed.ratings?.refundSpeed) || 3.5,
+      },
+      averageRefundTime: parsed.averageRefundTime || '3–7 business days via original payment source',
+      commonComplaints: Array.isArray(parsed.commonComplaints)
+        ? parsed.commonComplaints
+        : ['Return pickup delays', 'Refund processing SLA tracking'],
+      aiSummary:
+        parsed.aiSummary ||
+        'Verify seller return terms before checkout and escalate unresolved tickets to the Grievance Officer within 48 hours.',
     })
 
     await newPlatform.save()
