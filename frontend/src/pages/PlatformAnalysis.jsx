@@ -6,10 +6,10 @@ import {
   ShieldCheck,
   AlertTriangle,
   Scale,
-  PlusCircle,
   CheckCircle2,
   ArrowRight,
-  Lock,
+  Sparkles,
+  Star,
 } from 'lucide-react';
 import StarRating from '../components/StarRating';
 import {
@@ -25,22 +25,37 @@ export default function PlatformAnalysis() {
 
   const [query, setQuery] = useState(initialQuery);
   const [platform, setPlatform] = useState(null);
+  const [aiGenerated, setAiGenerated] = useState(false);
+  const [popularPlatforms, setPopularPlatforms] = useState([
+    'Amazon India',
+    'Flipkart',
+    'Meesho',
+    'Myntra',
+  ]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [notFoundTerm, setNotFoundTerm] = useState('');
   const [recentSearches, setRecentSearches] = useState(() =>
     getRecentSearches('sci_recent_platforms')
   );
 
-  // Add Platform Evidence Form
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newName, setNewName] = useState('');
-  const [newEscrow, setNewEscrow] = useState('Escrow Held Until Delivery');
-  const [newGrievanceOfficer, setNewGrievanceOfficer] = useState('Published & Active');
-  const [newRating, setNewRating] = useState('4');
-  const [newPolicyNotes, setNewPolicyNotes] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [submitSuccess, setSubmitSuccess] = useState('');
+  // 1-5 Star Platform & Service Feedback State
+  const [platformStars, setPlatformStars] = useState(5);
+  const [serviceStars, setServiceStars] = useState(5);
+  const [platformComment, setPlatformComment] = useState('');
+  const [serviceNote, setServiceNote] = useState('');
+  const [submittingFeedback, setSubmittingFeedback] = useState(false);
+  const [feedbackSuccess, setFeedbackSuccess] = useState('');
+
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/api/platforms`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.platforms?.length) {
+          setPopularPlatforms(data.platforms.slice(0, 6).map((p) => p.name));
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   async function fetchPlatform(rawTerm) {
     const clean = normalizeQuery(rawTerm);
@@ -51,46 +66,30 @@ export default function PlatformAnalysis() {
 
     setLoading(true);
     setError('');
-    setNotFoundTerm('');
-    setSubmitSuccess('');
+    setFeedbackSuccess('');
     setSearchParams({ q: clean });
 
     const updated = saveRecentSearch(clean, 'sci_recent_platforms');
     setRecentSearches(updated);
 
-    const compact = clean.replace(/\s+/g, '');
-    const candidates =
-      compact.toLowerCase() !== clean.toLowerCase()
-        ? [clean, compact]
-        : [clean];
-
     try {
-      let foundRecord = null;
-      for (const candidate of candidates) {
-        const res = await fetch(
-          `${API_BASE_URL}/api/platforms/${encodeURIComponent(candidate)}`
-        );
-        if (res.ok) {
-          const data = await res.json();
-          const record = data?.platform || data;
-          if (record && (record.name || record.platformName)) {
-            foundRecord = record;
-            break;
-          }
-        }
+      const res = await fetch(
+        `${API_BASE_URL}/api/platforms/${encodeURIComponent(clean)}`
+      );
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Could not analyze platform.');
       }
 
-      if (foundRecord) {
-        setPlatform(foundRecord);
-      } else {
-        setPlatform(null);
-        setNotFoundTerm(clean);
-        setNewName(clean);
-      }
-    } catch {
+      const record = data?.platform || data;
+      setPlatform(record);
+      setAiGenerated(Boolean(data?.aiGenerated));
+    } catch (err) {
       setPlatform(null);
       setError(
-        'Could not connect to the backend server. Make sure your server is running on port 5000.'
+        err.message ||
+          'Could not connect to the backend server. Make sure your server is running.'
       );
     } finally {
       setLoading(false);
@@ -110,73 +109,81 @@ export default function PlatformAnalysis() {
     fetchPlatform(query);
   }
 
-  async function handleAddPlatform(e) {
+  async function handleFeedbackSubmit(e) {
     e.preventDefault();
-    const cleanName = normalizeQuery(newName);
-    if (!cleanName) return;
+    if (!platform?._id) return;
 
-    setSubmitting(true);
+    setSubmittingFeedback(true);
     setError('');
-    setSubmitSuccess('');
+    setFeedbackSuccess('');
 
     try {
-      const payload = {
-        name: cleanName,
-        rating: Number(newRating),
-        protectionScore: Number(newRating),
-        escrowPolicy: newEscrow,
-        grievanceOfficer: newGrievanceOfficer,
-        returnWindowDays: 7,
-        evidenceCount: 1,
-        policies: newPolicyNotes
-          ? [newPolicyNotes]
-          : ['Platform buyer protection evidence logged.'],
-        summary: newPolicyNotes || 'Platform buyer protection evidence logged.',
-      };
-
-      const res = await fetch(`${API_BASE_URL}/api/platforms`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+      const res = await fetch(
+        `${API_BASE_URL}/api/platforms/${platform._id}/feedback`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            platformRating: platformStars,
+            serviceRating: serviceStars,
+            comment: platformComment,
+            serviceFeedback: serviceNote,
+          }),
+        }
+      );
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || 'Failed to save platform evidence.');
+        throw new Error(data.error || 'Failed to save platform feedback.');
       }
 
-      setSubmitSuccess(`Platform evidence saved for "${cleanName}".`);
-      setShowAddForm(false);
-      setNewPolicyNotes('');
-      setQuery(cleanName);
-      fetchPlatform(cleanName);
+      setPlatform(data.platform);
+      setAiGenerated(false);
+      setPlatformComment('');
+      setServiceNote('');
+      setFeedbackSuccess(
+        `Thank you! Your ${platformStars}/5 platform rating and ${serviceStars}/5 service feedback are saved to MongoDB.`
+      );
     } catch (err) {
-      setError(err.message || 'Error saving platform analysis.');
+      setError(err.message || 'Error saving platform feedback.');
     } finally {
-      setSubmitting(false);
+      setSubmittingFeedback(false);
     }
   }
 
   const displayName = platform?.name || platform?.platformName || '';
-  const displayRating =
-    platform?.rating ?? platform?.protectionScore ?? platform?.starRating ?? 4.1;
-  const displayReports =
-    platform?.evidenceCount ?? platform?.reportCount ?? 1;
-  const displayEscrow =
-    platform?.escrowPolicy || platform?.paymentProtection || 'Standard Marketplace Escrow';
-  const displayGrievance =
-    platform?.grievanceOfficer || platform?.complianceStatus || 'Listed on Platform';
-  const displayReturnDays =
-    platform?.returnWindowDays ?? platform?.refundWindow ?? 7;
+  const r = platform?.ratings || {};
+  const ratingValues = [
+    r.publicReputation,
+    r.customerSatisfaction,
+    r.deliveryPerformance,
+    r.supportQuality,
+    r.returnExperience,
+    r.refundSpeed,
+  ].filter((v) => typeof v === 'number' && v > 0);
 
-  const policyList = Array.isArray(platform?.policies)
+  const displayRating =
+    ratingValues.length > 0
+      ? Number(
+          (
+            ratingValues.reduce((sum, val) => sum + val, 0) / ratingValues.length
+          ).toFixed(1)
+        )
+      : platform?.rating ?? 4.1;
+
+  const displayRefundTime =
+    platform?.averageRefundTime || '3–5 business days to original payment method';
+  const displayReturnScore = r.returnExperience
+    ? `${r.returnExperience} / 5`
+    : '4.1 / 5';
+  const displaySupportScore = r.supportQuality
+    ? `${r.supportQuality} / 5`
+    : '3.9 / 5';
+
+  const complaintsList = Array.isArray(platform?.commonComplaints)
+    ? platform.commonComplaints
+    : Array.isArray(platform?.policies)
     ? platform.policies
-    : Array.isArray(platform?.features)
-    ? platform.features
-    : platform?.summary
-    ? [platform.summary]
-    : platform?.description
-    ? [platform.description]
     : [];
 
   return (
@@ -185,16 +192,16 @@ export default function PlatformAnalysis() {
       <section className="page-header">
         <div className="eyebrow">
           <Globe size={15} />
-          Platform Policy & Escrow Intelligence
+          AI + Crowd-Verified Platform Intelligence
         </div>
         <h1 className="page-title">
           Compare <span className="gradient-text">marketplace protection</span>{' '}
           rules
         </h1>
         <p className="page-subtitle">
-          Inspect how a shopping platform holds payments, enforces return
-          windows, and discloses grievance officer details under E-Commerce
-          Consumer Protection rules.
+          Inspect refund turnaround times, dispute patterns, and grievance
+          escalation scores across major shopping platforms—powered by MongoDB
+          and Gemini AI.
         </p>
 
         {/* Search Bar */}
@@ -213,7 +220,7 @@ export default function PlatformAnalysis() {
                   className="search-input"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Enter platform name (e.g., ExampleMarket)..."
+                  placeholder="Enter any platform name (e.g., Amazon India, Flipkart, Meesho, Nykaa)..."
                   aria-label="Platform name"
                 />
               </div>
@@ -228,40 +235,37 @@ export default function PlatformAnalysis() {
           </div>
 
           <div className="chip-row">
-            <span className="chip-label">Try:</span>
-            <button
-              type="button"
-              className="chip"
-              onClick={() => {
-                setQuery('ExampleMarket');
-                fetchPlatform('ExampleMarket');
-              }}
-            >
-              ExampleMarket
-            </button>
-            <button
-              type="button"
-              className="chip"
-              onClick={() => {
-                setQuery('Example Market');
-                fetchPlatform('Example Market');
-              }}
-            >
-              Example Market (spaced)
-            </button>
-            {recentSearches.map((term) => (
+            <span className="chip-label">Top Platforms:</span>
+            {popularPlatforms.map((name) => (
               <button
-                key={term}
+                key={name}
                 type="button"
                 className="chip"
                 onClick={() => {
-                  setQuery(term);
-                  fetchPlatform(term);
+                  setQuery(name);
+                  fetchPlatform(name);
                 }}
               >
-                Recent: {term}
+                <Globe size={13} /> {name}
               </button>
             ))}
+
+            {recentSearches
+              .filter((t) => !popularPlatforms.includes(t))
+              .slice(0, 3)
+              .map((term) => (
+                <button
+                  key={term}
+                  type="button"
+                  className="chip"
+                  onClick={() => {
+                    setQuery(term);
+                    fetchPlatform(term);
+                  }}
+                >
+                  Recent: {term}
+                </button>
+              ))}
           </div>
         </form>
       </section>
@@ -273,33 +277,18 @@ export default function PlatformAnalysis() {
         </div>
       )}
 
-      {submitSuccess && (
-        <div
-          className="badge-verified"
-          role="status"
-          style={{
-            padding: '12px 16px',
-            borderRadius: '12px',
-            marginBottom: '20px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}
-        >
-          <CheckCircle2 size={18} />
-          <span>{submitSuccess}</span>
-        </div>
-      )}
-
       {loading && (
         <div className="state-card" role="status" aria-live="polite">
           <div className="spinner" />
-          <h3>Auditing platform protection structure...</h3>
-          <p>Checking escrow holding rules, return windows, and grievance disclosures.</p>
+          <h3>Checking database & analyzing platform policies...</h3>
+          <p>
+            If this platform is new, Gemini AI is summarizing consumer protection
+            records and saving them to MongoDB.
+          </p>
         </div>
       )}
 
-      {!loading && !platform && !notFoundTerm && !error && (
+      {!loading && !platform && !error && (
         <div className="state-card">
           <Globe
             size={36}
@@ -307,304 +296,366 @@ export default function PlatformAnalysis() {
             style={{ marginBottom: '12px' }}
           />
           <h2 style={{ fontSize: '1.3rem', marginBottom: '8px' }}>
-            Select or search a platform to inspect buyer protections
+            Pick a platform above or search any shopping app
           </h2>
-          <p style={{ maxWidth: '54ch', margin: '0 auto 18px' }}>
-            Click <strong>ExampleMarket</strong> above to inspect a documented
-            marketplace profile, or log policy evidence for a new shopping site.
+          <p style={{ maxWidth: '54ch', margin: '0 auto' }}>
+            Every new platform searched is analyzed via Gemini AI, stored in
+            MongoDB, and updated with real shopper star ratings.
           </p>
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={() => setShowAddForm((prev) => !prev)}
-          >
-            <PlusCircle size={17} /> Log Platform Evidence
-          </button>
-        </div>
-      )}
-
-      {!loading && notFoundTerm && (
-        <div className="card-elevated" style={{ marginBottom: '24px' }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              flexWrap: 'wrap',
-              gap: '16px',
-            }}
-          >
-            <div>
-              <span className="badge badge-warn" style={{ marginBottom: '10px' }}>
-                Unindexed Platform
-              </span>
-              <h2 style={{ fontSize: '1.4rem', marginBottom: '6px' }}>
-                No platform policy record yet for "{notFoundTerm}"
-              </h2>
-              <p style={{ color: 'var(--ink-soft)', maxWidth: '60ch' }}>
-                We only display documented policy evidence. Add what you
-                observed on their checkout and return page to help future
-                buyers.
-              </p>
-            </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={() => setShowAddForm(true)}
-            >
-              <PlusCircle size={17} /> Add Platform Record
-            </button>
-          </div>
         </div>
       )}
 
       {!loading && platform && (
-        <section className="card-elevated" style={{ marginBottom: '24px' }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'flex-start',
-              flexWrap: 'wrap',
-              gap: '16px',
-              paddingBottom: '20px',
-              borderBottom: '1px solid var(--border)',
-            }}
-          >
-            <div>
-              <div
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '10px',
-                  flexWrap: 'wrap',
-                  marginBottom: '8px',
-                }}
-              >
-                <h2 style={{ fontSize: '1.65rem' }}>{displayName}</h2>
-                <span className="badge badge-verified">
-                  <ShieldCheck size={14} /> Policy Evidence Audited
-                </span>
-              </div>
-              <StarRating
-                rating={displayRating}
-                count={displayReports}
-                size={20}
-              />
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-              <Link
-                to={`/returns?platform=${encodeURIComponent(displayName)}`}
-                className="btn btn-secondary btn-sm"
-              >
-                View Return Steps <ArrowRight size={15} />
-              </Link>
-              <Link
-                to={`/support?q=${encodeURIComponent(displayName)}`}
-                className="btn btn-outline btn-sm"
-              >
-                Verified Contacts
-              </Link>
-            </div>
-          </div>
-
-          <div className="metrics-grid" style={{ marginTop: '20px' }}>
-            <div className="metric-box">
-              <div className="metric-label">Payment & Escrow Structure</div>
-              <div className="metric-value" style={{ fontSize: '1.1rem' }}>
-                {displayEscrow}
-              </div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
-                How funds are held before delivery
-              </div>
-            </div>
-
-            <div className="metric-box">
-              <div className="metric-label">Grievance Officer Disclosure</div>
-              <div className="metric-value" style={{ fontSize: '1.1rem' }}>
-                {displayGrievance}
-              </div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
-                48-hr acknowledgement rule check
-              </div>
-            </div>
-
-            <div className="metric-box">
-              <div className="metric-label">Standard Return Window</div>
-              <div className="metric-value">{displayReturnDays} Days</div>
-              <div style={{ fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
-                Documented post-delivery claim period
-              </div>
-            </div>
-          </div>
-
-          <div style={{ marginTop: '22px' }}>
-            <h3
+        <>
+          <section className="card-elevated" style={{ marginBottom: '24px' }}>
+            <div
               style={{
-                fontSize: '1.08rem',
-                marginBottom: '12px',
                 display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
+                justifyContent: 'space-between',
+                alignItems: 'flex-start',
+                flexWrap: 'wrap',
+                gap: '16px',
+                paddingBottom: '20px',
+                borderBottom: '1px solid var(--border)',
               }}
             >
-              <Scale size={18} color="var(--indigo)" />
-              Documented Policy & Compliance Findings
-            </h3>
+              <div>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '10px',
+                    flexWrap: 'wrap',
+                    marginBottom: '8px',
+                  }}
+                >
+                  <h2 style={{ fontSize: '1.65rem' }}>{displayName}</h2>
+                  {aiGenerated ? (
+                    <span className="badge badge-info">
+                      <Sparkles size={14} /> AI Policy Audit (Saved to DB)
+                    </span>
+                  ) : (
+                    <span className="badge badge-verified">
+                      <ShieldCheck size={14} /> Verified Database Record
+                    </span>
+                  )}
+                </div>
+                <StarRating rating={displayRating} count={6} size={20} />
+              </div>
 
-            {policyList.length > 0 ? (
-              <ul
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <Link
+                  to={`/returns?platform=${encodeURIComponent(displayName)}`}
+                  className="btn btn-secondary btn-sm"
+                >
+                  View Return Steps <ArrowRight size={15} />
+                </Link>
+                <Link
+                  to={`/support?q=${encodeURIComponent(displayName)}`}
+                  className="btn btn-outline btn-sm"
+                >
+                  Verified Contacts
+                </Link>
+              </div>
+            </div>
+
+            {/* AI / Policy Summary Banner */}
+            {platform.aiSummary && (
+              <div
                 style={{
-                  listStyle: 'none',
-                  padding: 0,
-                  margin: 0,
-                  display: 'grid',
-                  gap: '10px',
+                  marginTop: '18px',
+                  padding: '14px 16px',
+                  borderRadius: '12px',
+                  background: 'var(--sky)',
+                  border: '1px solid rgba(45, 63, 224, 0.16)',
+                  color: 'var(--ink-soft)',
+                  fontSize: '0.95rem',
+                  lineHeight: '1.6',
                 }}
               >
-                {policyList.map((item, idx) => (
-                  <li
-                    key={idx}
-                    style={{
-                      background: 'var(--mist)',
-                      border: '1px solid var(--border)',
-                      borderRadius: '12px',
-                      padding: '13px 16px',
-                      fontSize: '0.95rem',
-                      color: 'var(--ink-soft)',
-                    }}
-                  >
-                    {typeof item === 'string' ? item : JSON.stringify(item)}
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p style={{ color: 'var(--ink-muted)', fontSize: '0.94rem' }}>
-                Core escrow and grievance metrics are shown above.
-              </p>
+                <strong style={{ color: 'var(--indigo)' }}>
+                  Consumer Protection Summary:{' '}
+                </strong>
+                {platform.aiSummary}
+              </div>
             )}
-          </div>
-        </section>
-      )}
 
-      {showAddForm && (
-        <section className="card-elevated" aria-label="Log platform evidence">
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '16px',
-            }}
-          >
-            <h2 style={{ fontSize: '1.3rem' }}>Log Platform Policy Evidence</h2>
-            <button
-              type="button"
-              className="btn btn-outline btn-sm"
-              onClick={() => setShowAddForm(false)}
+            <div className="metrics-grid" style={{ marginTop: '20px' }}>
+              <div className="metric-box">
+                <div className="metric-label">Average Refund Speed</div>
+                <div className="metric-value" style={{ fontSize: '1.08rem' }}>
+                  {displayRefundTime}
+                </div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
+                  Documented bank/UPI credit timeline
+                </div>
+              </div>
+
+              <div className="metric-box">
+                <div className="metric-label">Return Experience Score</div>
+                <div className="metric-value">{displayReturnScore}</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
+                  Pickup & replacement reliability
+                </div>
+              </div>
+
+              <div className="metric-box">
+                <div className="metric-label">Support & SLA Quality</div>
+                <div className="metric-value">{displaySupportScore}</div>
+                <div style={{ fontSize: '0.82rem', color: 'var(--ink-muted)' }}>
+                  48-hr ticket & grievance responsiveness
+                </div>
+              </div>
+            </div>
+
+            {/* 6-Pillar Breakdown Bars */}
+            {ratingValues.length > 0 && (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                  gap: '12px',
+                  marginTop: '20px',
+                  padding: '16px',
+                  borderRadius: '14px',
+                  background: 'var(--mist)',
+                  border: '1px solid var(--border)',
+                }}
+              >
+                {[
+                  ['Public Reputation', r.publicReputation],
+                  ['Customer Satisfaction', r.customerSatisfaction],
+                  ['Delivery Performance', r.deliveryPerformance],
+                  ['Support Quality', r.supportQuality],
+                  ['Return Experience', r.returnExperience],
+                  ['Refund Speed', r.refundSpeed],
+                ].map(([label, score]) => (
+                  <div key={label}>
+                    <div
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        fontSize: '0.84rem',
+                        marginBottom: '4px',
+                      }}
+                    >
+                      <span style={{ color: 'var(--ink-soft)' }}>{label}</span>
+                      <strong>{(Number(score) || 4).toFixed(1)} / 5</strong>
+                    </div>
+                    <div
+                      style={{
+                        height: '7px',
+                        borderRadius: '999px',
+                        background: 'var(--border)',
+                        overflow: 'hidden',
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${Math.min(100, ((Number(score) || 4) / 5) * 100)}%`,
+                          height: '100%',
+                          background: 'var(--indigo)',
+                        }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Documented Dispute Patterns & User Notes */}
+            <div style={{ marginTop: '22px' }}>
+              <h3
+                style={{
+                  fontSize: '1.08rem',
+                  marginBottom: '12px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
+              >
+                <Scale size={18} color="var(--indigo)" />
+                Documented Dispute Patterns & Buyer Observations
+              </h3>
+
+              {complaintsList.length > 0 ? (
+                <ul
+                  style={{
+                    listStyle: 'none',
+                    padding: 0,
+                    margin: 0,
+                    display: 'grid',
+                    gap: '10px',
+                  }}
+                >
+                  {complaintsList.map((item, idx) => (
+                    <li
+                      key={idx}
+                      style={{
+                        background: 'var(--mist)',
+                        border: '1px solid var(--border)',
+                        borderRadius: '12px',
+                        padding: '13px 16px',
+                        fontSize: '0.95rem',
+                        color: 'var(--ink-soft)',
+                      }}
+                    >
+                      {typeof item === 'string' ? item : JSON.stringify(item)}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p style={{ color: 'var(--ink-muted)', fontSize: '0.94rem' }}>
+                  Core escrow and grievance metrics are shown above.
+                </p>
+              )}
+            </div>
+          </section>
+
+          {/* Interactive 5-Star Platform Rating & Safe Cart Service Feedback Card */}
+          <section className="card-elevated" aria-label="Rate platform and service">
+            <h2 style={{ fontSize: '1.3rem', marginBottom: '6px' }}>
+              Rate {displayName} & Share Quick Service Feedback
+            </h2>
+            <p
+              style={{
+                color: 'var(--ink-soft)',
+                fontSize: '0.94rem',
+                marginBottom: '16px',
+              }}
             >
-              Close
-            </button>
-          </div>
+              Your star rating updates {displayName}'s live score in MongoDB
+              and helps improve Safe Cart Intelligence.
+            </p>
 
-          <form onSubmit={handleAddPlatform} className="form-grid">
-            <div className="form-group">
-              <label className="form-label" htmlFor="plat-name-input">
-                Platform Name *
-              </label>
-              <input
-                id="plat-name-input"
-                type="text"
-                className="form-control"
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="form-group">
-              <label className="form-label" htmlFor="plat-escrow-select">
-                Payment / Escrow Protection
-              </label>
-              <select
-                id="plat-escrow-select"
-                className="form-control"
-                value={newEscrow}
-                onChange={(e) => setNewEscrow(e.target.value)}
+            {feedbackSuccess && (
+              <div
+                className="badge-verified"
+                role="status"
+                style={{
+                  padding: '12px 16px',
+                  borderRadius: '12px',
+                  marginBottom: '16px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                }}
               >
-                <option value="Escrow Held Until Delivery">
-                  Escrow Held Until Delivery
-                </option>
-                <option value="Direct UPI / No Escrow">
-                  Direct UPI / No Escrow
-                </option>
-                <option value="Cash on Delivery Available">
-                  Cash on Delivery Available
-                </option>
-              </select>
-            </div>
+                <CheckCircle2 size={18} />
+                <span>{feedbackSuccess}</span>
+              </div>
+            )}
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="plat-grievance-select">
-                Grievance Officer Info
-              </label>
-              <select
-                id="plat-grievance-select"
-                className="form-control"
-                value={newGrievanceOfficer}
-                onChange={(e) => setNewGrievanceOfficer(e.target.value)}
-              >
-                <option value="Published & Active">Published & Active</option>
-                <option value="Missing / Hard to Find">
-                  Missing / Hard to Find
-                </option>
-              </select>
-            </div>
+            <form onSubmit={handleFeedbackSubmit} className="form-grid">
+              <div className="form-group">
+                <label className="form-label">
+                  Rate {displayName} (1 to 5 Stars) *
+                </label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setPlatformStars(num)}
+                      className="btn btn-outline btn-sm"
+                      style={{
+                        borderColor:
+                          platformStars >= num ? '#F59E0B' : 'var(--border)',
+                        background:
+                          platformStars >= num
+                            ? 'rgba(245, 158, 11, 0.12)'
+                            : 'transparent',
+                        color:
+                          platformStars >= num ? '#B45309' : 'var(--ink-soft)',
+                      }}
+                    >
+                      <Star
+                        size={16}
+                        fill={platformStars >= num ? '#F59E0B' : 'none'}
+                        color={platformStars >= num ? '#F59E0B' : 'currentColor'}
+                      />
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            <div className="form-group">
-              <label className="form-label" htmlFor="plat-rating-select">
-                Protection Evidence Rating
-              </label>
-              <select
-                id="plat-rating-select"
-                className="form-control"
-                value={newRating}
-                onChange={(e) => setNewRating(e.target.value)}
-              >
-                <option value="5">5 Stars — Strong buyer escrow & clear prior-price rules</option>
-                <option value="4">4 Stars — Reliable return window & grievance contact</option>
-                <option value="3">3 Stars — Partial protection / strict conditions</option>
-                <option value="2">2 Stars — High friction returns</option>
-                <option value="1">1 Star — No buyer protection / direct transfer only</option>
-              </select>
-            </div>
+              <div className="form-group">
+                <label className="form-label">
+                  How was Safe Cart's service? (1 to 5 Stars)
+                </label>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  {[1, 2, 3, 4, 5].map((num) => (
+                    <button
+                      key={num}
+                      type="button"
+                      onClick={() => setServiceStars(num)}
+                      className="btn btn-outline btn-sm"
+                      style={{
+                        borderColor:
+                          serviceStars >= num ? 'var(--indigo)' : 'var(--border)',
+                        background:
+                          serviceStars >= num
+                            ? 'rgba(45, 63, 224, 0.1)'
+                            : 'transparent',
+                        color:
+                          serviceStars >= num ? 'var(--indigo)' : 'var(--ink-soft)',
+                      }}
+                    >
+                      <Star
+                        size={16}
+                        fill={serviceStars >= num ? 'var(--indigo)' : 'none'}
+                        color={
+                          serviceStars >= num ? 'var(--indigo)' : 'currentColor'
+                        }
+                      />
+                      {num}
+                    </button>
+                  ))}
+                </div>
+              </div>
 
-            <div className="form-group full-width">
-              <label className="form-label" htmlFor="plat-notes-input">
-                Factual Policy Notes
-              </label>
-              <textarea
-                id="plat-notes-input"
-                className="form-control"
-                value={newPolicyNotes}
-                onChange={(e) => setNewPolicyNotes(e.target.value)}
-                placeholder="Note return window days, open-box delivery availability, or dark-pattern warnings..."
-              />
-            </div>
+              <div className="form-group">
+                <label className="form-label" htmlFor="platform-buyer-note">
+                  Your Experience on {displayName} (Saved to DB)
+                </label>
+                <textarea
+                  id="platform-buyer-note"
+                  className="form-control"
+                  value={platformComment}
+                  onChange={(e) => setPlatformComment(e.target.value)}
+                  placeholder="e.g., Open-box delivery worked smoothly and refund credited in 3 days..."
+                />
+              </div>
 
-            <div className="form-group full-width">
-              <button
-                type="submit"
-                className="btn btn-primary"
-                disabled={submitting}
-              >
-                <Lock size={17} />
-                {submitting ? 'Saving Platform Data...' : 'Save Platform Evidence'}
-              </button>
-            </div>
-          </form>
-        </section>
+              <div className="form-group">
+                <label className="form-label" htmlFor="platform-service-note">
+                  How is Safe Cart's service? (Optional feedback)
+                </label>
+                <textarea
+                  id="platform-service-note"
+                  className="form-control"
+                  value={serviceNote}
+                  onChange={(e) => setServiceNote(e.target.value)}
+                  placeholder="e.g., Clear refund breakdown and fast AI summary..."
+                />
+              </div>
+
+              <div className="form-group full-width">
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={submittingFeedback}
+                >
+                  <CheckCircle2 size={17} />
+                  {submittingFeedback
+                    ? 'Saving Rating & Feedback...'
+                    : 'Submit Platform Rating & Feedback'}
+                </button>
+              </div>
+            </form>
+          </section>
+        </>
       )}
     </div>
   );
