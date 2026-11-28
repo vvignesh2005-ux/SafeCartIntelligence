@@ -46,13 +46,14 @@ export default function ComplaintGenerator() {
   const [platform, setPlatform] = useState(
     searchParams.get('platform') || ''
   );
-  const [orderId, setOrderId] = useState('');
-  const [issue, setIssue] = useState('');
+  const [orderId, setOrderId] = useState(searchParams.get('orderId') || '');
+  const [issue, setIssue] = useState(searchParams.get('issue') || '');
   const [desiredResolution, setDesiredResolution] = useState('Full Refund');
 
   const [letterText, setLetterText] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
   const [copied, setCopied] = useState(false);
   const [history, setHistory] = useState(() => getComplaintHistory());
 
@@ -61,8 +62,12 @@ export default function ComplaintGenerator() {
   useEffect(() => {
     const s = searchParams.get('seller');
     const p = searchParams.get('platform');
+    const o = searchParams.get('orderId');
+    const i = searchParams.get('issue');
     if (s) setSellerName(s);
     if (p) setPlatform(p);
+    if (o) setOrderId(o);
+    if (i) setIssue(i);
   }, [searchParams]);
 
   function fillExample() {
@@ -74,6 +79,7 @@ export default function ComplaintGenerator() {
     );
     setDesiredResolution('Full Refund');
     setError('');
+    setNotice('');
   }
 
   async function handleGenerate(e) {
@@ -85,6 +91,7 @@ export default function ComplaintGenerator() {
 
     setLoading(true);
     setError('');
+    setNotice('');
 
     try {
       const payload = {
@@ -119,6 +126,7 @@ export default function ComplaintGenerator() {
       }
 
       setLetterText(generated);
+      setCopied(false);
 
       const updatedHistory = saveComplaintHistory({
         id: data?.complaint?._id || Date.now().toString(),
@@ -157,11 +165,12 @@ export default function ComplaintGenerator() {
 
   function handleDownloadTxt() {
     if (!letterText) return;
+    const safeOrder = (orderId || 'Letter').replace(/[^a-zA-Z0-9_-]/g, '_');
     const blob = new Blob([letterText], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `SafeCart-Complaint-${orderId || 'Letter'}.txt`;
+    link.download = `SafeCart-Complaint-${safeOrder}.txt`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -170,10 +179,12 @@ export default function ComplaintGenerator() {
 
   function handleLaunchEmail() {
     if (!letterText) return;
+    navigator.clipboard?.writeText(letterText);
+    setNotice('Letter copied to clipboard in case your email app clips long text.');
     const subject = encodeURIComponent(
       `Formal Consumer Grievance: Order ${orderId || 'Dispute'} — ${sellerName || platform || 'Online Order'}`
     );
-    const body = encodeURIComponent(letterText);
+    const body = encodeURIComponent(letterText.slice(0, 1600));
     window.location.href = `mailto:?subject=${subject}&body=${body}`;
   }
 
@@ -391,6 +402,21 @@ export default function ComplaintGenerator() {
             </div>
           </div>
 
+          {notice && (
+            <p
+              className="no-print"
+              role="status"
+              style={{
+                marginBottom: '12px',
+                fontSize: '0.86rem',
+                color: 'var(--indigo)',
+                fontWeight: 500,
+              }}
+            >
+              {notice}
+            </p>
+          )}
+
           {/* Statutory SLA Escalation Timeline */}
           <div
             className="no-print"
@@ -453,7 +479,10 @@ export default function ComplaintGenerator() {
             id="editable-letter-box"
             className="form-control no-print"
             value={letterText}
-            onChange={(e) => setLetterText(e.target.value)}
+            onChange={(e) => {
+              setLetterText(e.target.value);
+              if (copied) setCopied(false);
+            }}
             style={{
               minHeight: '320px',
               lineHeight: '1.65',
@@ -529,6 +558,8 @@ export default function ComplaintGenerator() {
                     setPlatform(item.platform);
                     setOrderId(item.orderId);
                     setLetterText(item.letter);
+                    setCopied(false);
+                    setNotice('');
                     window.scrollTo({ top: 0, behavior: 'smooth' });
                   }}
                 >
